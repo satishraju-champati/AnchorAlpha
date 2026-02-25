@@ -8,8 +8,18 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 import logging
 
-from ..models import Stock
-from ...cfg.config import Config
+from AnchorAlpha.models import Stock
+
+# Import config with fallback
+try:
+    from cfg.config import Config
+except ImportError:
+    # Fallback config for testing
+    class Config:
+        FMP_API_KEY = ""
+        FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+        MIN_MARKET_CAP = 10_000_000_000
+        FMP_REQUESTS_PER_MINUTE = 300
 
 logger = logging.getLogger(__name__)
 
