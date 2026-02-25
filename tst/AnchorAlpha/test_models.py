@@ -173,7 +173,7 @@ class TestMomentumCalculation:
         all_momentum = calc.calculate_all_momentum()
         
         assert len(all_momentum) == 4
-        assert all_momentum[7] == 0.1  # (110/100) - 1
+        assert abs(all_momentum[7] - 0.1) < 0.0001  # (110/100) - 1
         assert abs(all_momentum[30] - 0.047619047619047616) < 0.0001  # (110/105) - 1
         assert abs(all_momentum[60] - 0.018518518518518517) < 0.0001  # (110/108) - 1
         assert all_momentum[90] is None  # Missing data
