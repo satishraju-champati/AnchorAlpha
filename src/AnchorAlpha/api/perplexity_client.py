@@ -120,7 +120,7 @@ Please provide a concise 2-3 sentence summary explaining:
 Focus on factual, recent developments. Keep the response under 150 words."""
 
             data = {
-                "model": "sonar-pro",
+                "model": "sonar",  # Using basic sonar model to conserve API credits
                 "messages": [
                     {
                         "role": "system",
@@ -197,7 +197,7 @@ Focus on factual, recent developments. Keep the response under 150 words."""
         """
         try:
             test_data = {
-                "model": "sonar-pro",
+                "model": "sonar",  # Using basic sonar model
                 "messages": [
                     {
                         "role": "user",
