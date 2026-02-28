@@ -13,6 +13,7 @@ class Config:
     FMP_API_KEY: str = os.getenv("FMP_API_KEY", "")
     FMP_BASE_URL: str = "https://financialmodelingprep.com/api/v3"
     PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
+    PERPLEXITY_BASE_URL: str = "https://api.perplexity.ai"
     
     # Market Cap Thresholds (in USD)
     MIN_MARKET_CAP: int = 10_000_000_000  # $10B
@@ -34,7 +35,7 @@ class Config:
     
     # Rate Limiting
     FMP_REQUESTS_PER_MINUTE: int = 300  # Free tier limit
-    PERPLEXITY_REQUESTS_PER_MINUTE: int = 60
+    PERPLEXITY_REQUESTS_PER_MINUTE: int = 60  # Conservative rate limit
     
     # Data Quality
     MAX_MOMENTUM_VALUE: float = 10.0  # 1000% cap
