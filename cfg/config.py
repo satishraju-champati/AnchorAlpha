@@ -33,6 +33,11 @@ class Config:
     S3_BUCKET: str = os.getenv("S3_BUCKET", "anchoralpha-data")
     S3_KEY_PREFIX: str = "momentum-data"
     
+    # S3 Configuration
+    S3_RETRY_ATTEMPTS: int = 3
+    S3_SERVER_SIDE_ENCRYPTION: str = "AES256"
+    S3_CONTENT_TYPE: str = "application/json"
+    
     # Rate Limiting
     FMP_REQUESTS_PER_MINUTE: int = 300  # Free tier limit
     PERPLEXITY_REQUESTS_PER_MINUTE: int = 60  # Conservative rate limit

@@ -4,9 +4,27 @@ Factory for creating Perplexity clients - automatically chooses between real and
 
 import os
 import logging
-from typing import Union
+from typing import Union, Optional
 
 logger = logging.getLogger(__name__)
+
+
+class PerplexityFactory:
+    """Factory class for creating Perplexity clients."""
+    
+    @staticmethod
+    def create_client(api_key: Optional[str] = None, use_mock: bool = False) -> Union['PerplexityClient', 'MockPerplexityClient']:
+        """
+        Create appropriate Perplexity client based on configuration.
+        
+        Args:
+            api_key: Optional API key. If not provided, will check environment variables.
+            use_mock: If True, always return mock client regardless of API key availability.
+            
+        Returns:
+            PerplexityClient if API key is available and use_mock is False, MockPerplexityClient otherwise.
+        """
+        return create_perplexity_client(api_key=api_key, force_mock=use_mock)
 
 
 def create_perplexity_client(api_key: str = None, force_mock: bool = False) -> Union['PerplexityClient', 'MockPerplexityClient']:

@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AnchorAlpha Streamlit App - Lightsail Container Service'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  ContainerServiceName:
+    Type: String
+    Default: anchor-alpha-streamlit
+    Description: Name for the Lightsail container service
+  
+  ServicePower:
+    Type: String
+    Default: nano
+    AllowedValues: [nano, micro, small, medium, large, xlarge]
+    Description: Power specification for the container service
+  
+  ServiceScale:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 20
+    Description: Number of container instances to run
+
+Resources:
+  # Lightsail Container Service
+  StreamlitContainerService:
+    Type: AWS::Lightsail::Container
+    Properties:
+      ServiceName: !Sub '${ContainerServiceName}-${Environment}'
+      Power: !Ref ServicePower
+      Scale: !Ref ServiceScale
+      Tags:
+        - Key: Project
+          Value: AnchorAlpha
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: Frontend
+      ContainerServiceDeployment:
+        Containers:
+          streamlit-app:
+            Image: anchor-alpha-streamlit:latest
+            Environment:
+              ENVIRONMENT: !Ref Environment
+              S3_BUCKET: !Sub 'anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}'
+            Ports:
+              "8501": HTTP
+        PublicEndpoint:
+          ContainerName: streamlit-app
+          ContainerPort: 8501
+          HealthCheck:
+            HealthyThreshold: 2
+            UnhealthyThreshold: 2
+            TimeoutSeconds: 5
+            IntervalSeconds: 30
+            Path: /
+            SuccessCodes: "200-499"
+
+Outputs:
+  ContainerServiceName:
+    Description: 'Name of the Lightsail container service'
+    Value: !Ref StreamlitContainerService
+    Export:
+      Name: !Sub '${AWS::StackName}-ContainerService'
+  
+  ContainerServiceUrl:
+    Description: 'URL of the deployed Streamlit application'
+    Value: !Sub 'https://${StreamlitContainerService}.${AWS::Region}.cs.amazonlightsail.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppUrl'

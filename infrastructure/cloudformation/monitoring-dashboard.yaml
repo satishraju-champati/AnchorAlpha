@@ -1,0 +1,325 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AnchorAlpha CloudWatch Dashboard and Monitoring Configuration'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  LambdaFunctionName:
+    Type: String
+    Description: Name of the Lambda function to monitor
+  
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket to monitor
+
+Resources:
+  # CloudWatch Dashboard
+  AnchorAlphaDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'AnchorAlpha-MomentumScreener-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${LambdaFunctionName}" ],
+                  [ ".", "Invocations", ".", "." ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Function Performance",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "ExecutionDuration" ],
+                  [ ".", "ExecutionSuccess" ],
+                  [ ".", "StocksFetched" ],
+                  [ ".", "StocksProcessed" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Data Processing Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "FMPAPICalls" ],
+                  [ ".", "FMPAPIErrors" ],
+                  [ ".", "FMPAPIAverageResponseTime" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "FMP API Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "PerplexityAPICalls" ],
+                  [ ".", "PerplexityAPIErrors" ],
+                  [ ".", "PerplexityAPIAverageResponseTime" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Perplexity API Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "S3Uploads" ],
+                  [ ".", "S3UploadErrors" ],
+                  [ "AWS/S3", "BucketSizeBytes", "BucketName", "${S3BucketName}", "StorageType", "StandardStorage" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "S3 Storage Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "APIRateLimitUtilization", "APIName", "FMP" ],
+                  [ "...", "Perplexity" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Rate Limit Utilization (%)",
+                "period": 300,
+                "stat": "Maximum",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 100
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AnchorAlpha/MomentumScreener", "ErrorCount" ],
+                  [ ".", "WarningCount" ],
+                  [ ".", "SummariesGenerated" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Error Tracking & AI Summaries",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 18,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${LambdaFunctionName}'\n| fields @timestamp, level, message, execution_id\n| filter level = \"ERROR\"\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Recent Errors",
+                "view": "table"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 24,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${LambdaFunctionName}'\n| fields @timestamp, message, fmp_api_calls, perplexity_api_calls, stocks_processed, duration_seconds\n| filter message like /Final metrics/\n| sort @timestamp desc\n| limit 10",
+                "region": "${AWS::Region}",
+                "title": "Execution Summary",
+                "view": "table"
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarms for System Health
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'AnchorAlpha-HighErrorRate-${Environment}'
+      AlarmDescription: 'Alert when error rate is high'
+      MetricName: ErrorCount
+      Namespace: AnchorAlpha/MomentumScreener
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  APIRateLimitAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'AnchorAlpha-APIRateLimit-${Environment}'
+      AlarmDescription: 'Alert when API rate limit utilization is high'
+      MetricName: APIRateLimitUtilization
+      Namespace: AnchorAlpha/MomentumScreener
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  LongExecutionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'AnchorAlpha-LongExecution-${Environment}'
+      AlarmDescription: 'Alert when execution takes too long'
+      MetricName: ExecutionDuration
+      Namespace: AnchorAlpha/MomentumScreener
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 600  # 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  S3UploadFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'AnchorAlpha-S3UploadFailure-${Environment}'
+      AlarmDescription: 'Alert when S3 uploads fail'
+      MetricName: S3UploadErrors
+      Namespace: AnchorAlpha/MomentumScreener
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # Log Groups with Retention
+  CustomMetricsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/anchoralpha/custom-metrics-${Environment}'
+      RetentionInDays: 30
+
+  APIUsageLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/anchoralpha/api-usage-${Environment}'
+      RetentionInDays: 90
+
+  # Metric Filters for Custom Metrics
+  FMPAPICallsMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LambdaFunctionName}'
+      FilterPattern: '{ $.api_name = "FMP" && $.status = "success" }'
+      MetricTransformations:
+        - MetricNamespace: AnchorAlpha/MomentumScreener
+          MetricName: FMPAPICallsFromLogs
+          MetricValue: '1'
+          DefaultValue: 0
+
+  PerplexityAPICallsMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LambdaFunctionName}'
+      FilterPattern: '{ $.api_name = "Perplexity" && $.status = "success" }'
+      MetricTransformations:
+        - MetricNamespace: AnchorAlpha/MomentumScreener
+          MetricName: PerplexityAPICallsFromLogs
+          MetricValue: '1'
+          DefaultValue: 0
+
+  ErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LambdaFunctionName}'
+      FilterPattern: '{ $.level = "ERROR" }'
+      MetricTransformations:
+        - MetricNamespace: AnchorAlpha/MomentumScreener
+          MetricName: ErrorsFromLogs
+          MetricValue: '1'
+          DefaultValue: 0
+
+Outputs:
+  DashboardURL:
+    Description: 'URL to the CloudWatch Dashboard'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${AnchorAlphaDashboard}'
+    Export:
+      Name: !Sub '${AWS::StackName}-DashboardURL'
+
+  HighErrorRateAlarmArn:
+    Description: 'ARN of the high error rate alarm'
+    Value: !GetAtt HighErrorRateAlarm.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-HighErrorRateAlarm'
+
+  APIRateLimitAlarmArn:
+    Description: 'ARN of the API rate limit alarm'
+    Value: !GetAtt APIRateLimitAlarm.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-APIRateLimitAlarm'
