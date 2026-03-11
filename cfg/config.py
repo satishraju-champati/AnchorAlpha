@@ -11,7 +11,7 @@ class Config:
     
     # API Configuration
     FMP_API_KEY: str = os.getenv("FMP_API_KEY", "")
-    FMP_BASE_URL: str = "https://financialmodelingprep.com/api/v3"
+    FMP_BASE_URL: str = "https://financialmodelingprep.com/stable"
     PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
     PERPLEXITY_BASE_URL: str = "https://api.perplexity.ai"
     

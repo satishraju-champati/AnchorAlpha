@@ -10,14 +10,25 @@ import streamlit as st
 from functools import lru_cache
 import time
 
-from ..storage.s3_client import S3DataStorage
-from ..models import Stock
+try:
+    from ..storage.s3_client import S3DataStorage
+    from ..models import Stock
+except ImportError:
+    from AnchorAlpha.storage.s3_client import S3DataStorage
+    from AnchorAlpha.models import Stock
 
 # Import config from the cfg module at project root
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-from cfg.config import Config
+
+try:
+    from cfg.config import Config
+except ImportError:
+    # Fallback config for testing
+    class Config:
+        AWS_REGION = "us-east-1"
+        S3_BUCKET = "anchoralpha-data"
 
 
 logger = logging.getLogger(__name__)

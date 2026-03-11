@@ -17,7 +17,7 @@ except ImportError:
     # Fallback config for testing
     class Config:
         FMP_API_KEY = ""
-        FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+        FMP_BASE_URL = "https://financialmodelingprep.com/stable"
         MIN_MARKET_CAP = 10_000_000_000
         FMP_REQUESTS_PER_MINUTE = 300
 
@@ -94,7 +94,8 @@ class FMPClient:
     
     def get_stock_screener(self, market_cap_more_than: int = None) -> List[Dict[str, Any]]:
         """
-        Get stocks using the stock screener endpoint.
+        Get stocks using individual quote requests (screener simulation).
+        Note: /stable/ API doesn't have stock-screener, so we use a list of large-cap stocks.
         
         Args:
             market_cap_more_than: Minimum market cap filter
@@ -102,26 +103,62 @@ class FMPClient:
         Returns:
             List of stock data dictionaries
         """
-        params = {}
+        # Large-cap stocks to simulate screener functionality
+        large_cap_symbols = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "BRK.B",
+            "UNH", "JNJ", "JPM", "V", "PG", "HD", "MA", "DIS", "PYPL", "ADBE",
+            "NFLX", "CRM", "NKE", "WMT", "BAC", "KO", "PFE", "INTC", "CSCO",
+            "VZ", "MRK", "T", "XOM", "CVX", "ABBV", "PEP", "TMO", "ACN", "COST",
+            "AVGO", "TXN", "LLY", "ABT", "DHR", "NEE", "QCOM", "PM", "HON", "UNP",
+            "IBM", "LOW", "SPGI", "GS", "CAT", "MDT", "UPS", "RTX", "INTU", "ISRG"
+        ]
         
-        if market_cap_more_than:
-            params["marketCapMoreThan"] = market_cap_more_than
-        
-        # Add filters for US stocks
-        params.update({
-            "country": "US",
-            "exchange": "NASDAQ,NYSE",
-            "limit": 1000  # Get more stocks to ensure we have enough large caps
-        })
+        stocks_data = []
+        market_cap_threshold = market_cap_more_than or Config.MIN_MARKET_CAP
         
         try:
-            data = self._make_request("stock-screener", params)
-            logger.info(f"Retrieved {len(data)} stocks from screener")
-            return data
+            for symbol in large_cap_symbols:
+                try:
+                    # Get both profile and quote data
+                    profile_data = self._make_request(f"profile?symbol={symbol}")
+                    quote_data = self._make_request(f"quote?symbol={symbol}")
+                    
+                    if profile_data and quote_data and len(profile_data) > 0 and len(quote_data) > 0:
+                        profile = profile_data[0]
+                        quote = quote_data[0]
+                        
+                        # Check market cap threshold
+                        market_cap = profile.get('marketCap', 0)
+                        if market_cap >= market_cap_threshold:
+                            # Combine profile and quote data
+                            combined_data = {
+                                'symbol': profile.get('symbol'),
+                                'companyName': profile.get('companyName'),
+                                'marketCap': market_cap,
+                                'price': quote.get('price'),
+                                'changePercentage': quote.get('changePercentage'),
+                                'change': quote.get('change'),
+                                'sector': profile.get('sector'),
+                                'industry': profile.get('industry'),
+                                'beta': profile.get('beta'),
+                                'volAvg': profile.get('volAvg'),
+                                'lastDividend': profile.get('lastDividend')
+                            }
+                            stocks_data.append(combined_data)
+                    
+                    # Rate limiting
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to get data for {symbol}: {e}")
+                    continue
             
-        except FMPAPIError as e:
-            logger.error(f"Failed to get stock screener data: {e}")
-            raise
+            logger.info(f"Retrieved {len(stocks_data)} stocks from simulated screener")
+            return stocks_data
+            
+        except Exception as e:
+            logger.error(f"Stock screener simulation failed: {e}")
+            raise FMPAPIError(f"Stock screener simulation failed: {e}")
     
     def get_large_cap_stocks(self) -> List[Dict[str, Any]]:
         """Get large-cap US stocks (>$10B market cap)."""
@@ -164,7 +201,7 @@ class FMPClient:
     def get_company_profile(self, symbol: str) -> Dict[str, Any]:
         """Get company profile information."""
         try:
-            data = self._make_request(f"profile/{symbol}")
+            data = self._make_request(f"profile?symbol={symbol}")
             
             if not data or len(data) == 0:
                 logger.warning(f"No profile data found for {symbol}")
