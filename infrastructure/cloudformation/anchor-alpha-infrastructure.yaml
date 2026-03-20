@@ -46,11 +46,6 @@ Resources:
             NoncurrentVersionExpirationInDays: 30
       VersioningConfiguration:
         Status: Enabled
-      NotificationConfiguration:
-        CloudWatchConfigurations:
-          - Event: s3:ObjectCreated:*
-            CloudWatchConfiguration:
-              LogGroupName: !Ref S3AccessLogGroup
 
   # CloudWatch Log Group for S3 access logs
   S3AccessLogGroup:
@@ -83,11 +78,11 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
-                Resource: !Sub '${MomentumDataBucket}/*'
+                Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}/*'
               - Effect: Allow
                 Action:
                   - s3:ListBucket
-                Resource: !Ref MomentumDataBucket
+                Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -98,6 +93,14 @@ Resources:
                 Resource: 
                   - !Ref FMPApiKeySecret
                   - !Ref PerplexityApiKeySecret
+        - PolicyName: SQSDeadLetterQueue
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt ErrorNotificationQueue.Arn
         - PolicyName: CloudWatchLogs
           PolicyDocument:
             Version: '2012-10-17'
@@ -132,9 +135,8 @@ Resources:
       Handler: AnchorAlpha.lambda_function.handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-              return {'statusCode': 200, 'body': 'Placeholder - deploy actual code'}
+        S3Bucket: !Sub 'anchor-alpha-lambda-code-${AWS::AccountId}'
+        S3Key: 'lambda-deployment.zip'
       Timeout: 900  # 15 minutes
       MemorySize: 1024
       Environment:
@@ -143,7 +145,7 @@ Resources:
           S3_BUCKET: !Ref MomentumDataBucket
           FMP_API_KEY_SECRET: !Ref FMPApiKeySecret
           PERPLEXITY_API_KEY_SECRET: !Ref PerplexityApiKeySecret
-      DeadLetterQueue:
+      DeadLetterConfig:
         TargetArn: !GetAtt ErrorNotificationQueue.Arn
 
   # CloudWatch Log Group for Lambda
@@ -201,7 +203,7 @@ Resources:
     Properties:
       QueueName: !Sub 'anchor-alpha-errors-${Environment}'
       MessageRetentionPeriod: 1209600  # 14 days
-      VisibilityTimeoutSeconds: 60
+      VisibilityTimeout: 60
 
   # CloudWatch Alarm for Lambda Errors
   LambdaErrorAlarm:
@@ -239,8 +241,9 @@ Resources:
         - Name: FunctionName
           Value: !Ref MomentumProcessorFunction
       AlarmActions:
-        - !Ref NotificationTopic  # AWS Bu
-dget for Cost Control
+        - !Ref NotificationTopic
+
+  # AWS Budget for Cost Control
   MonthlyCostBudget:
     Type: AWS::Budgets::Budget
     Properties:
@@ -252,27 +255,25 @@ dget for Cost Control
         TimeUnit: MONTHLY
         BudgetType: COST
         CostFilters:
-          TagKey:
-            - Project
-          TagValue:
-            - AnchorAlpha
-        NotificationsWithSubscribers:
-          - Notification:
-              NotificationType: ACTUAL
-              ComparisonOperator: GREATER_THAN
-              Threshold: 80
-              ThresholdType: PERCENTAGE
-            Subscribers:
-              - SubscriptionType: EMAIL
-                Address: !Ref NotificationEmail
-          - Notification:
-              NotificationType: FORECASTED
-              ComparisonOperator: GREATER_THAN
-              Threshold: 100
-              ThresholdType: PERCENTAGE
-            Subscribers:
-              - SubscriptionType: EMAIL
-                Address: !Ref NotificationEmail
+          TagKeyValue:
+            - "Project$AnchorAlpha"
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotificationEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotificationEmail
 
 Outputs:
   S3BucketName:

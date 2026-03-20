@@ -94,106 +94,109 @@ class FMPClient:
     
     def get_stock_screener(self, market_cap_more_than: int = None) -> List[Dict[str, Any]]:
         """
-        Get stocks using individual quote requests (screener simulation).
-        Note: /stable/ API doesn't have stock-screener, so we use a list of large-cap stocks.
-        
+        Get large-cap US stocks using the /stable/company-screener endpoint.
+
         Args:
             market_cap_more_than: Minimum market cap filter
-            
+
         Returns:
             List of stock data dictionaries
         """
-        # Large-cap stocks to simulate screener functionality
-        large_cap_symbols = [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "BRK.B",
-            "UNH", "JNJ", "JPM", "V", "PG", "HD", "MA", "DIS", "PYPL", "ADBE",
-            "NFLX", "CRM", "NKE", "WMT", "BAC", "KO", "PFE", "INTC", "CSCO",
-            "VZ", "MRK", "T", "XOM", "CVX", "ABBV", "PEP", "TMO", "ACN", "COST",
-            "AVGO", "TXN", "LLY", "ABT", "DHR", "NEE", "QCOM", "PM", "HON", "UNP",
-            "IBM", "LOW", "SPGI", "GS", "CAT", "MDT", "UPS", "RTX", "INTU", "ISRG"
-        ]
-        
-        stocks_data = []
         market_cap_threshold = market_cap_more_than or Config.MIN_MARKET_CAP
-        
+
+        params = {
+            "marketCapMoreThan": market_cap_threshold,
+            "country": "US",
+            "isActivelyTrading": "true",
+            "isEtf": "false",
+            "isFund": "false",
+            "limit": 200
+        }
+
         try:
-            for symbol in large_cap_symbols:
-                try:
-                    # Get both profile and quote data
-                    profile_data = self._make_request(f"profile?symbol={symbol}")
-                    quote_data = self._make_request(f"quote?symbol={symbol}")
-                    
-                    if profile_data and quote_data and len(profile_data) > 0 and len(quote_data) > 0:
-                        profile = profile_data[0]
-                        quote = quote_data[0]
-                        
-                        # Check market cap threshold
-                        market_cap = profile.get('marketCap', 0)
-                        if market_cap >= market_cap_threshold:
-                            # Combine profile and quote data
-                            combined_data = {
-                                'symbol': profile.get('symbol'),
-                                'companyName': profile.get('companyName'),
-                                'marketCap': market_cap,
-                                'price': quote.get('price'),
-                                'changePercentage': quote.get('changePercentage'),
-                                'change': quote.get('change'),
-                                'sector': profile.get('sector'),
-                                'industry': profile.get('industry'),
-                                'beta': profile.get('beta'),
-                                'volAvg': profile.get('volAvg'),
-                                'lastDividend': profile.get('lastDividend')
-                            }
-                            stocks_data.append(combined_data)
-                    
-                    # Rate limiting
-                    time.sleep(0.1)
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to get data for {symbol}: {e}")
-                    continue
-            
-            logger.info(f"Retrieved {len(stocks_data)} stocks from simulated screener")
+            data = self._make_request("company-screener", params)
+
+            if not data or not isinstance(data, list):
+                logger.warning("No data returned from company-screener")
+                return []
+
+            # Normalise field names to match what create_stock_from_screener_data expects
+            stocks_data = []
+            for item in data:
+                stocks_data.append({
+                    "symbol": item.get("symbol"),
+                    "companyName": item.get("companyName"),
+                    "marketCap": item.get("marketCap", 0),
+                    "price": item.get("price"),
+                    "changePercentage": item.get("changePercentage"),
+                    "change": item.get("change"),
+                    "sector": item.get("sector"),
+                    "industry": item.get("industry"),
+                    "beta": item.get("beta"),
+                    "volAvg": item.get("volume"),
+                    "lastDividend": item.get("lastAnnualDividend"),
+                })
+
+            logger.info(f"Retrieved {len(stocks_data)} stocks from company-screener")
             return stocks_data
-            
+
         except Exception as e:
-            logger.error(f"Stock screener simulation failed: {e}")
-            raise FMPAPIError(f"Stock screener simulation failed: {e}")
+            logger.error(f"company-screener request failed: {e}")
+            raise FMPAPIError(f"company-screener request failed: {e}")
     
     def get_large_cap_stocks(self) -> List[Dict[str, Any]]:
         """Get large-cap US stocks (>$10B market cap)."""
         return self.get_stock_screener(market_cap_more_than=Config.MIN_MARKET_CAP)
-    
+
+    def get_price_changes(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get price change percentages for a stock across multiple timeframes.
+        Uses /stable/stock-price-change which returns 5D, 1M, 3M etc. in one call.
+
+        Returns dict with keys: 5D, 1M, 3M, 6M, 1Y (percentage changes)
+        """
+        try:
+            data = self._make_request("stock-price-change", {"symbol": symbol})
+            if not data or not isinstance(data, list) or len(data) == 0:
+                logger.warning(f"No price change data for {symbol}")
+                return {}
+            return data[0]
+        except FMPAPIError as e:
+            logger.error(f"Failed to get price changes for {symbol}: {e}")
+            raise
+
     def get_historical_prices(self, symbol: str, days: int = 100) -> Dict[str, Any]:
         """
         Get historical price data for a stock.
-        
+
         Args:
             symbol: Stock ticker symbol
             days: Number of days of historical data to fetch
-            
+
         Returns:
-            Historical price data
+            Historical price data in {"historical": [...]} format
         """
-        # Calculate date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
-        
+
         params = {
+            "symbol": symbol,
             "from": start_date.strftime("%Y-%m-%d"),
             "to": end_date.strftime("%Y-%m-%d")
         }
-        
+
         try:
-            data = self._make_request(f"historical-price-full/{symbol}", params)
-            
-            if "historical" not in data:
+            # /stable/historical-price-eod/full returns a flat list
+            data = self._make_request("historical-price-eod/full", params)
+
+            if not data or not isinstance(data, list):
                 logger.warning(f"No historical data found for {symbol}")
                 return {"historical": []}
-            
-            logger.info(f"Retrieved {len(data['historical'])} historical prices for {symbol}")
-            return data
-            
+
+            logger.info(f"Retrieved {len(data)} historical prices for {symbol}")
+            # Normalise to the {"historical": [...]} shape the handler expects
+            return {"historical": data}
+
         except FMPAPIError as e:
             logger.error(f"Failed to get historical prices for {symbol}: {e}")
             raise

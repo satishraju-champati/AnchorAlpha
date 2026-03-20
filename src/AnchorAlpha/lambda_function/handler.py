@@ -121,68 +121,64 @@ class LambdaOrchestrator:
             raise
     
     def _fetch_historical_data_batch(self, stocks: List[Stock]) -> Dict[str, HistoricalPriceData]:
-        """Fetch historical price data for a batch of stocks."""
+        """Fetch price change data for a batch of stocks using stock-price-change endpoint."""
         historical_data = {}
         failed_fetches = 0
-        
-        self.logger.info(f"Starting historical data fetch for {len(stocks)} stocks")
-        
+
+        self.logger.info(f"Starting price change fetch for {len(stocks)} stocks")
+
         for i, stock in enumerate(stocks):
             try:
-                # Check rate limits
                 wait_time = self.api_monitor.check_rate_limit("FMP")
                 if wait_time > 0:
                     time.sleep(wait_time)
-                
-                # Fetch historical prices with monitoring
-                with self.logger.api_call_timer("FMP", f"historical-price-full/{stock.ticker}"):
-                    price_data = self.fmp_client.get_historical_prices(stock.ticker, days=100)
-                
-                if "historical" not in price_data or not price_data["historical"]:
-                    self.logger.warning(f"No historical data for {stock.ticker}", ticker=stock.ticker)
+
+                with self.logger.api_call_timer("FMP", f"stock-price-change/{stock.ticker}"):
+                    price_changes = self.fmp_client.get_price_changes(stock.ticker)
+
+                if not price_changes:
+                    self.logger.warning(f"No price change data for {stock.ticker}", ticker=stock.ticker)
                     failed_fetches += 1
                     continue
-                
-                # Extract prices for specific days ago
-                historical_prices = price_data["historical"]
-                historical_prices.sort(key=lambda x: x["date"], reverse=True)  # Most recent first
-                
-                # Create HistoricalPriceData object
+
+                current = stock.current_price
+
+                def price_ago(pct):
+                    """Derive historical price from current price and % change."""
+                    if pct is None:
+                        return None
+                    try:
+                        return current / (1 + float(pct) / 100)
+                    except (ZeroDivisionError, TypeError):
+                        return None
+
                 hist_data = HistoricalPriceData(
                     ticker=stock.ticker,
-                    current_price=stock.current_price
+                    current_price=current,
+                    prices_7d_ago=price_ago(price_changes.get("5D")),
+                    prices_30d_ago=price_ago(price_changes.get("1M")),
+                    prices_60d_ago=price_ago(price_changes.get("3M")),
+                    prices_90d_ago=price_ago(price_changes.get("3M")),
                 )
-                
-                # Extract prices for momentum calculation windows
-                if len(historical_prices) > 7:
-                    hist_data.prices_7d_ago = historical_prices[7]["close"]
-                if len(historical_prices) > 30:
-                    hist_data.prices_30d_ago = historical_prices[30]["close"]
-                if len(historical_prices) > 60:
-                    hist_data.prices_60d_ago = historical_prices[60]["close"]
-                if len(historical_prices) > 90:
-                    hist_data.prices_90d_ago = historical_prices[90]["close"]
-                
+
                 historical_data[stock.ticker] = hist_data
-                
-                # Log progress every 50 stocks
+
                 if (i + 1) % 50 == 0:
-                    self.logger.info(f"Historical data progress: {i + 1}/{len(stocks)} stocks processed")
-                
+                    self.logger.info(f"Price change fetch progress: {i + 1}/{len(stocks)} stocks")
+
             except Exception as e:
-                error_msg = f"Failed to fetch historical data for {stock.ticker}: {str(e)}"
-                self.logger.warning(error_msg, ticker=stock.ticker)
+                self.logger.warning(f"Failed to fetch price changes for {stock.ticker}: {str(e)}", ticker=stock.ticker)
                 failed_fetches += 1
                 continue
-        
+
         success_rate = (len(historical_data) / len(stocks)) * 100 if stocks else 0
         self.logger.info(
-            "Historical data fetch completed",
+            "Price change fetch completed",
             successful_fetches=len(historical_data),
             failed_fetches=failed_fetches,
             success_rate=f"{success_rate:.1f}%"
         )
-        
+
         return historical_data
     
     def _calculate_momentum_for_stocks(self, stocks: List[Stock], historical_data: Dict[str, HistoricalPriceData]) -> List[Stock]:

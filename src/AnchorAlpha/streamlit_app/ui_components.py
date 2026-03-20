@@ -616,8 +616,8 @@ class ErrorDisplay:
                 st.markdown(f"**{i}.** {suggestion}")
             
             # Add refresh button
-            if st.button("🔄 Try Again", key="error_refresh_btn"):
-                st.experimental_rerun()
+            if st.button("🔄 Try Again", key=f"error_refresh_btn_{error_type}"):
+                st.rerun()
     
     def render_warning(self, message: str, warning_type: str = "general"):
         """Render warning message with appropriate styling."""
@@ -687,7 +687,7 @@ class ErrorDisplay:
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🔄 Refresh Data", key="no_data_refresh"):
-                    st.experimental_rerun()
+                    st.rerun()
             
             with col2:
                 if st.button("📧 Contact Support", key="contact_support"):
