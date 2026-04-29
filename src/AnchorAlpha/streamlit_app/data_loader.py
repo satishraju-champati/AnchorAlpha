@@ -441,7 +441,9 @@ class StreamlitDataLoader:
 
 
 # Global data loader instance for Streamlit
-@st.cache_resource
+# NOTE: Do NOT use @st.cache_resource here — it persists for the entire container
+# lifetime and prevents the data cache from refreshing with new S3 files.
+# The individual methods use @st.cache_data(ttl=300) which handles caching correctly.
 def get_data_loader() -> StreamlitDataLoader:
-    """Get cached data loader instance."""
+    """Get data loader instance."""
     return StreamlitDataLoader()
