@@ -184,15 +184,16 @@ class S3DataStorage:
             List of available dates in YYYY-MM-DD format
         """
         try:
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=f"{self.key_prefix}/momentum-data-",
-                MaxKeys=limit
-            )
-            
+            # Fetch all objects (S3 returns alphabetically, not by date)
+            # We must retrieve all keys then sort to find the most recent
             dates = []
-            if 'Contents' in response:
-                for obj in response['Contents']:
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(
+                Bucket=self.bucket_name,
+                Prefix=f"{self.key_prefix}/momentum-data-"
+            )
+            for page in pages:
+                for obj in page.get('Contents', []):
                     key = obj['Key']
                     # Extract date from key: momentum-data/momentum-data-YYYY-MM-DD.json
                     if key.endswith('.json'):
@@ -200,8 +201,9 @@ class S3DataStorage:
                         if len(date_part) == 3:
                             date_str = f"{date_part[0]}-{date_part[1]}-{date_part[2].replace('.json', '')}"
                             dates.append(date_str)
-            
+
             dates.sort(reverse=True)  # Most recent first
+            dates = dates[:limit]     # Trim to requested limit after sorting
             logger.info(f"Found {len(dates)} momentum data files in S3")
             return dates
             
