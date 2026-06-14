@@ -76,3 +76,7 @@ data/
 # Temporary files
 tmp/
 temp/
+
+# Build artifacts
+*.zip
+lambda-deployment.zip
