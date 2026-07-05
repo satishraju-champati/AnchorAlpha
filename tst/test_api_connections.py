@@ -37,7 +37,7 @@ def load_secrets():
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            return {"_value": raw}  # plain string secret (FMP is stored this way)
+            return {"_value": raw.strip()}
 
     try:
         claude = get("anchoralpha/claude")
@@ -72,7 +72,7 @@ def load_secrets():
         "alpaca_key": alpaca.get("ALPACA_KEY", ""),
         "alpaca_secret": alpaca.get("ALPACA_SECRET", ""),
         "av_key": av.get("ALPHAVANTAGE_API_KEY", ""),
-        "fmp_key": fmp.get("FMP_API_KEY") or fmp.get("_value", ""),
+        "fmp_key": fmp.get("_value") or fmp.get("FMP_API_KEY") or list(fmp.values())[0],
     }
 
 
@@ -115,8 +115,8 @@ def test_fmp(fmp_key: str):
         resp = requests.get(f"{base}/profile", params={"symbol": "NVDA", "apikey": fmp_key}, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        mkt_cap = data[0].get("mktCap", 0) if data else 0
-        ok("FMP: profile NVDA", f"mktCap=${mkt_cap/1e12:.1f}T")
+        mkt_cap = data[0].get("marketCap", 0) if data else 0
+        ok("FMP: profile NVDA", f"marketCap=${mkt_cap/1e12:.1f}T")
     except Exception as e:
         fail("FMP: profile NVDA", str(e))
 

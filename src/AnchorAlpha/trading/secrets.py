@@ -13,8 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def _get_secret(client, secret_name: str) -> dict:
-    raw = client.get_secret_value(SecretId=secret_name)
-    return json.loads(raw["SecretString"])
+    raw = client.get_secret_value(SecretId=secret_name)["SecretString"]
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Plain string secret (e.g. FMP key stored as bare string by CloudFormation)
+        return {"_value": raw.strip()}
 
 
 def load_secrets() -> dict:
@@ -30,7 +34,7 @@ def load_secrets() -> dict:
         "alpaca_paper_key": alpaca_paper["ALPACA_KEY"],
         "alpaca_paper_secret": alpaca_paper["ALPACA_SECRET"],
         "alphavantage_key": alphavantage["ALPHAVANTAGE_API_KEY"],
-        "fmp_key": list(fmp.values())[0],  # FMP secret stores key as the only value
+        "fmp_key": fmp.get("_value") or fmp.get("FMP_API_KEY") or list(fmp.values())[0],
     }
     logger.info("All secrets loaded from Secrets Manager")
     return secrets

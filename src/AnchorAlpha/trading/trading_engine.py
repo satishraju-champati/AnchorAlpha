@@ -97,7 +97,7 @@ def build_stock_data(ticker: str, fmp_key: str) -> dict:
             "ticker": ticker,
             "company_name": profile[0].get("companyName", "") if profile else "",
             "current_price": quote[0].get("price", 0) if quote else 0,
-            "market_cap": profile[0].get("mktCap", 0) if profile else 0,
+            "market_cap": profile[0].get("marketCap", 0) if profile else 0,
             "price_changes": changes[0] if changes else {},
             "news_headlines": [n.get("title", "") for n in (news or [])[:5]],
             "analyst_ratings": ratings[:3] if ratings else [],
