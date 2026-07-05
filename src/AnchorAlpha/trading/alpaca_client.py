@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
 LIVE_BASE_URL = "https://api.alpaca.markets/v2"
+MARKET_DATA_URL = "https://data.alpaca.markets/v2"  # quotes/bars — separate from broker API
 
 
 @dataclass
@@ -128,7 +129,14 @@ class AlpacaClient:
         take_profit_pct: 0.20 = +20% above entry
         stop_loss_pct:   0.10 = -10% below entry
         """
-        quote = self._get(f"/quotes/latest", params={"symbols": ticker})
+        resp = requests.get(
+            f"{MARKET_DATA_URL}/stocks/quotes/latest",
+            headers=self.headers,
+            params={"symbols": ticker},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        quote = resp.json()
         ask = float(quote["quotes"][ticker]["ap"])
         take_profit_price = round(ask * (1 + take_profit_pct), 2)
         stop_loss_price = round(ask * (1 - stop_loss_pct), 2)

@@ -65,33 +65,33 @@ def should_shutdown() -> bool:
     return t > close_dt
 
 
+FMP_BASE = "https://financialmodelingprep.com/stable"
+
+
+def _fmp_get(path: str, fmp_key: str, params: dict = None) -> any:
+    """FMP stable API — ticker passed as ?symbol= query param, not path param."""
+    r = requests.get(f"{FMP_BASE}/{path}", params={**(params or {}), "apikey": fmp_key}, timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
 def get_price_history(ticker: str, fmp_key: str, days: int = 15) -> list[float]:
-    """Fetch daily closing prices from FMP for dip detection."""
-    url = f"https://financialmodelingprep.com/stable/historical-price-full/{ticker}"
-    resp = requests.get(url, params={"apikey": fmp_key, "timeseries": days}, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    prices = [d["close"] for d in reversed(data.get("historical", []))]
-    return prices
+    """Fetch daily closing prices from FMP for dip detection (oldest first)."""
+    data = _fmp_get("historical-price-eod/full", fmp_key, {"symbol": ticker, "timeseries": days})
+    if isinstance(data, list):
+        return [d["close"] for d in reversed(data)]
+    return [d["close"] for d in reversed(data.get("historical", []))]
 
 
 def build_stock_data(ticker: str, fmp_key: str) -> dict:
     """Collect all 11 signal inputs from FMP for Claude scoring."""
-    base = "https://financialmodelingprep.com/stable"
-    headers = {"apikey": fmp_key}
-
-    def get(path, params=None):
-        r = requests.get(f"{base}/{path}", params={**(params or {}), "apikey": fmp_key}, timeout=10)
-        r.raise_for_status()
-        return r.json()
-
     try:
-        quote = get(f"quote/{ticker}")
-        profile = get(f"profile/{ticker}")
-        changes = get(f"stock-price-change/{ticker}")
-        news = get("news/stock", {"tickers": ticker, "limit": 5})
-        ratings = get(f"analyst-stock-ratings/{ticker}")
-        income = get(f"income-statement/{ticker}", {"limit": 2})
+        quote = _fmp_get("quote", fmp_key, {"symbol": ticker})
+        profile = _fmp_get("profile", fmp_key, {"symbol": ticker})
+        changes = _fmp_get("stock-price-change", fmp_key, {"symbol": ticker})
+        news = _fmp_get("news/stock", fmp_key, {"tickers": ticker, "limit": 5})
+        ratings = _fmp_get("analyst-stock-ratings", fmp_key, {"symbol": ticker})
+        income = _fmp_get("income-statement", fmp_key, {"symbol": ticker, "limit": 2})
 
         return {
             "ticker": ticker,
