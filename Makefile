@@ -1,18 +1,26 @@
 # AnchorAlpha Makefile
 
-.PHONY: help install test lint format clean build deploy
+.PHONY: help install test lint format clean build deploy deploy-infra push
+
+AWS_ACCOUNT_ID := 013523127218
+AWS_REGION     := us-east-1
+ECR_REPO       := $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/anchoralpha-trading
+CFN_STACK      := anchor-alpha-infrastructure-prod
+CFN_TEMPLATE   := infrastructure/cloudformation/anchor-alpha-infrastructure.yaml
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  install    - Install dependencies"
-	@echo "  test       - Run unit tests"
-	@echo "  lint       - Run linting checks"
-	@echo "  format     - Format code with black and isort"
-	@echo "  clean      - Clean build artifacts"
-	@echo "  build      - Build Lambda deployment package"
-	@echo "  deploy     - Deploy to AWS"
-	@echo "  dev        - Run Streamlit app locally"
+	@echo "  install       - Install dependencies"
+	@echo "  test          - Run unit tests"
+	@echo "  lint          - Run linting checks"
+	@echo "  format        - Format code with black and isort"
+	@echo "  clean         - Clean build artifacts"
+	@echo "  build         - Build Lambda deployment package"
+	@echo "  deploy        - Deploy Lambda code to AWS"
+	@echo "  deploy-infra  - Deploy/update CloudFormation stack (ECS, ECR, IAM, EventBridge)"
+	@echo "  push          - Build and push trading bot Docker image to ECR"
+	@echo "  dev           - Run Streamlit app locally"
 
 # Install dependencies
 install:
@@ -52,11 +60,34 @@ build: clean
 	cp -r cfg build/lambda/
 	cd build/lambda && zip -r ../lambda-deployment.zip .
 
-# Deploy to AWS (requires AWS CLI configured)
+# Deploy Lambda code to AWS
 deploy: build
 	aws lambda update-function-code \
 		--function-name anchoralpha-momentum-processor \
 		--zip-file fileb://build/lambda-deployment.zip
+
+# Deploy/update CloudFormation stack (ECS, ECR, IAM, EventBridge)
+deploy-infra:
+	aws cloudformation deploy \
+		--stack-name $(CFN_STACK) \
+		--template-file $(CFN_TEMPLATE) \
+		--capabilities CAPABILITY_NAMED_IAM \
+		--region $(AWS_REGION) \
+		--parameter-overrides \
+			Environment=prod \
+			NotificationEmail=satishraju.info@gmail.com \
+			FMPApiKey=UNCHANGED \
+			PerplexityApiKey=UNCHANGED \
+		--no-fail-on-empty-changeset
+
+# Build and push trading bot Docker image to ECR
+push:
+	aws ecr get-login-password --region $(AWS_REGION) | \
+		docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+	docker build -t anchoralpha-trading .
+	docker tag anchoralpha-trading:latest $(ECR_REPO):latest
+	docker push $(ECR_REPO):latest
+	@echo "Pushed $(ECR_REPO):latest"
 
 # Run Streamlit app locally
 dev:

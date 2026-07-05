@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'AnchorAlpha Momentum Screener Infrastructure - Lambda, S3, EventBridge, and Monitoring'
+Description: 'AnchorAlpha Momentum Screener Infrastructure - Lambda, S3, EventBridge, ECS, and Monitoring'
 
 Parameters:
   Environment:
@@ -7,24 +7,31 @@ Parameters:
     Default: prod
     AllowedValues: [dev, staging, prod]
     Description: Environment name
-  
+
   FMPApiKey:
     Type: String
     NoEcho: true
     Description: Financial Modeling Prep API Key
-  
+
   PerplexityApiKey:
     Type: String
     NoEcho: true
-    Description: Perplexity API Key
-  
+    Description: Perplexity API Key (kept for backward compatibility)
+
   NotificationEmail:
     Type: String
     Description: Email address for budget and error notifications
     AllowedPattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$'
 
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: "subnet-c70c49e9,subnet-2389b82c,subnet-0f404e45"
+    Description: Default VPC public subnet IDs for Fargate task
+
 Resources:
-  # S3 Bucket for storing processed momentum data
+
+  # ─── S3 ────────────────────────────────────────────────────────────────────
+
   MomentumDataBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -47,14 +54,14 @@ Resources:
       VersioningConfiguration:
         Status: Enabled
 
-  # CloudWatch Log Group for S3 access logs
   S3AccessLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/s3/anchor-alpha-momentum-data-${Environment}'
       RetentionInDays: 30
 
-  # Lambda Execution Role
+  # ─── LAMBDA ────────────────────────────────────────────────────────────────
+
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -74,23 +81,18 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                  - s3:DeleteObject
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
                 Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}/*'
               - Effect: Allow
-                Action:
-                  - s3:ListBucket
+                Action: s3:ListBucket
                 Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource: 
+                Action: secretsmanager:GetSecretValue
+                Resource:
                   - !Ref FMPApiKeySecret
                   - !Ref PerplexityApiKeySecret
         - PolicyName: SQSDeadLetterQueue
@@ -98,20 +100,16 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - sqs:SendMessage
+                Action: sqs:SendMessage
                 Resource: !GetAtt ErrorNotificationQueue.Arn
         - PolicyName: CloudWatchLogs
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/anchor-alpha-*'
-  # Secrets Manager for API Keys
+
   FMPApiKeySecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -126,7 +124,6 @@ Resources:
       Description: 'Perplexity API Key for AnchorAlpha'
       SecretString: !Ref PerplexityApiKey
 
-  # Lambda Function
   MomentumProcessorFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -137,7 +134,7 @@ Resources:
       Code:
         S3Bucket: !Sub 'anchor-alpha-lambda-code-${AWS::AccountId}'
         S3Key: 'lambda-deployment.zip'
-      Timeout: 900  # 15 minutes
+      Timeout: 900
       MemorySize: 1024
       Environment:
         Variables:
@@ -148,20 +145,18 @@ Resources:
       DeadLetterConfig:
         TargetArn: !GetAtt ErrorNotificationQueue.Arn
 
-  # CloudWatch Log Group for Lambda
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/anchor-alpha-momentum-processor-${Environment}'
       RetentionInDays: 30
 
-  # EventBridge Rule for Daily Execution
   DailyScheduleRule:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub 'anchor-alpha-daily-schedule-${Environment}'
       Description: 'Trigger momentum processing daily after market close'
-      ScheduleExpression: 'cron(30 21 ? * MON-FRI *)'  # 9:30 PM UTC (4:30 PM EST) on weekdays
+      ScheduleExpression: 'cron(30 21 ? * MON-FRI *)'
       State: ENABLED
       Targets:
         - Arn: !GetAtt MomentumProcessorFunction.Arn
@@ -173,7 +168,6 @@ Resources:
               "trigger_time": "daily_schedule"
             }
 
-  # Permission for EventBridge to invoke Lambda
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -182,14 +176,14 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DailyScheduleRule.Arn
 
-  # SNS Topic for Notifications
+  # ─── NOTIFICATIONS & MONITORING ────────────────────────────────────────────
+
   NotificationTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub 'anchor-alpha-notifications-${Environment}'
       DisplayName: 'AnchorAlpha System Notifications'
 
-  # SNS Subscription for Email Notifications
   EmailNotificationSubscription:
     Type: AWS::SNS::Subscription
     Properties:
@@ -197,15 +191,13 @@ Resources:
       TopicArn: !Ref NotificationTopic
       Endpoint: !Ref NotificationEmail
 
-  # SQS Dead Letter Queue for Failed Lambda Executions
   ErrorNotificationQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub 'anchor-alpha-errors-${Environment}'
-      MessageRetentionPeriod: 1209600  # 14 days
+      MessageRetentionPeriod: 1209600
       VisibilityTimeout: 60
 
-  # CloudWatch Alarm for Lambda Errors
   LambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -224,7 +216,6 @@ Resources:
       AlarmActions:
         - !Ref NotificationTopic
 
-  # CloudWatch Alarm for Lambda Duration
   LambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -235,7 +226,7 @@ Resources:
       Statistic: Average
       Period: 300
       EvaluationPeriods: 2
-      Threshold: 600000  # 10 minutes in milliseconds
+      Threshold: 600000
       ComparisonOperator: GreaterThanThreshold
       Dimensions:
         - Name: FunctionName
@@ -243,20 +234,16 @@ Resources:
       AlarmActions:
         - !Ref NotificationTopic
 
-  # AWS Budget for Cost Control
   MonthlyCostBudget:
     Type: AWS::Budgets::Budget
     Properties:
       Budget:
         BudgetName: !Sub 'AnchorAlpha-Monthly-Budget-${Environment}'
         BudgetLimit:
-          Amount: 10
+          Amount: 150
           Unit: USD
         TimeUnit: MONTHLY
         BudgetType: COST
-        CostFilters:
-          TagKeyValue:
-            - "Project$AnchorAlpha"
       NotificationsWithSubscribers:
         - Notification:
             NotificationType: ACTUAL
@@ -274,6 +261,198 @@ Resources:
           Subscribers:
             - SubscriptionType: EMAIL
               Address: !Ref NotificationEmail
+
+  # ─── ECR ───────────────────────────────────────────────────────────────────
+
+  TradingBotECRRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: anchoralpha-trading
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep last 5 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+
+  # ─── ECS ───────────────────────────────────────────────────────────────────
+
+  TradingBotCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: anchoralpha
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  TradingBotLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/anchoralpha-trading
+      RetentionInDays: 30
+
+  # Execution role: allows ECS to pull Docker image from ECR and write logs
+  TradingBotExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'AnchorAlpha-ECS-ExecutionRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:anchoralpha/*'
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:anchor-alpha/*'
+
+  # Task role: permissions the running container has at runtime
+  TradingBotTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'AnchorAlpha-ECS-TaskRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}'
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:anchoralpha/*'
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:anchor-alpha/*'
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt TradingBotLogGroup.Arn
+
+  TradingBotTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: anchoralpha-trading
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt TradingBotExecutionRole.Arn
+      TaskRoleArn: !GetAtt TradingBotTaskRole.Arn
+      ContainerDefinitions:
+        - Name: trading-bot
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/anchoralpha-trading:latest'
+          Essential: true
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: S3_BUCKET
+              Value: !Sub 'anchor-alpha-momentum-data-${Environment}-${AWS::AccountId}'
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+            - Name: CLAUDE_SECRET_NAME
+              Value: anchoralpha/claude
+            - Name: ALPACA_PAPER_SECRET_NAME
+              Value: anchoralpha/alpaca-paper
+            - Name: ALPHAVANTAGE_SECRET_NAME
+              Value: anchoralpha/alphavantage
+            - Name: FMP_SECRET_NAME
+              Value: anchor-alpha/fmp-api-key-prod
+            - Name: DASHBOARD_SECRET_NAME
+              Value: anchoralpha/dashboard
+            - Name: ALPACA_PAPER_BASE_URL
+              Value: https://paper-api.alpaca.markets/v2
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/anchoralpha-trading
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: trading
+
+  # ─── EVENTBRIDGE SCHEDULER (start trading task Mon-Fri 8:30 AM ET) ─────────
+
+  TradingBotSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'AnchorAlpha-Scheduler-Role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RunECSTask
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref TradingBotTaskDefinition
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TradingBotExecutionRole.Arn
+                  - !GetAtt TradingBotTaskRole.Arn
+
+  StartTradingSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub 'anchoralpha-start-trading-${Environment}'
+      Description: 'Start trading engine Mon-Fri at 8:30 AM ET (13:30 UTC)'
+      ScheduleExpression: 'cron(30 13 ? * MON-FRI *)'
+      ScheduleExpressionTimezone: America/New_York
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt TradingBotCluster.Arn
+        RoleArn: !GetAtt TradingBotSchedulerRole.Arn
+        EcsParameters:
+          TaskDefinitionArn: !Ref TradingBotTaskDefinition
+          LaunchType: FARGATE
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              Subnets: !Ref SubnetIds
+              AssignPublicIp: ENABLED
 
 Outputs:
   S3BucketName:
@@ -317,3 +496,21 @@ Outputs:
     Value: !GetAtt DailyScheduleRule.Arn
     Export:
       Name: !Sub '${AWS::StackName}-ScheduleRule'
+
+  ECRRepositoryUri:
+    Description: 'URI of the ECR repository for the trading bot image'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/anchoralpha-trading'
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepo'
+
+  ECSClusterName:
+    Description: 'Name of the ECS cluster'
+    Value: !Ref TradingBotCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ECSCluster'
+
+  TradingTaskDefinitionArn:
+    Description: 'ARN of the trading bot task definition'
+    Value: !Ref TradingBotTaskDefinition
+    Export:
+      Name: !Sub '${AWS::StackName}-TaskDefinition'
