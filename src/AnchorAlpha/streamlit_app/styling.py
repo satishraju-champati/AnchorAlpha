@@ -23,7 +23,7 @@ ORANGE      = "#f59e0b"       # warning
 class AnchorAlphaTheme:
     """Dark/black professional theme."""
 
-    NAVY_BLUE       = BG
+    NAVY_ACCENT       = BG
     GOLD            = ACCENT
     SLATE_GRAY      = MUTED
     DARK_GRAY       = BG_ALT
@@ -95,7 +95,7 @@ class AnchorAlphaTheme:
             "500B_1T":   ("$500B–$1T",   "#1976d2"),
             "1T_plus":   ("$1T+",        "#0050a0"),
         }
-        name, color = tier_map.get(tier_key, (tier_key, BLUE))
+        name, color = tier_map.get(tier_key, (tier_key, ACCENT))
         return (
             f'<span style="background:{color};color:#fff;padding:2px 8px;'
             f'border-radius:4px;font-size:0.75rem;font-weight:600;">{name}</span>'
@@ -103,8 +103,8 @@ class AnchorAlphaTheme:
 
     @classmethod
     def create_info_box(cls, content: str, box_type: str = "info"):
-        colors = {"info": BLUE, "warning": ORANGE, "error": RED}
-        color = colors.get(box_type, BLUE)
+        colors = {"info": ACCENT, "warning": ORANGE, "error": RED}
+        color = colors.get(box_type, ACCENT)
         st.markdown(
             f'<div style="border-left:4px solid {color};background:{BG_ALT};'
             f'padding:12px 16px;border-radius:4px;margin:8px 0;color:{BODY};">'
@@ -128,7 +128,7 @@ class AnchorAlphaTheme:
         st.markdown(
             f"""
             <div class="aa-stock-card">
-                <span style="font-size:1.05rem;font-weight:700;color:{BLUE};">{ticker}</span>
+                <span style="font-size:1.05rem;font-weight:700;color:{ACCENT};">{ticker}</span>
                 <span style="color:{MUTED};font-size:0.85rem;margin-left:8px;">{company}</span>
                 <div style="margin-top:6px;font-size:0.9rem;color:{BODY};">
                     <b>Price:</b> {price} &nbsp;|&nbsp;
@@ -409,6 +409,6 @@ def apply_custom_theme():
 
 def create_loading_spinner(message: str = "Loading data..."):
     st.markdown(
-        f'<div style="text-align:center;color:{BLUE};font-size:1rem;padding:16px;">⚓ {message}</div>',
+        f'<div style="text-align:center;color:{ACCENT};font-size:1rem;padding:16px;">⚓ {message}</div>',
         unsafe_allow_html=True,
     )

@@ -36,5 +36,17 @@ def load_secrets() -> dict:
         "alphavantage_key": alphavantage["ALPHAVANTAGE_API_KEY"],
         "fmp_key": fmp.get("_value") or fmp.get("FMP_API_KEY") or list(fmp.values())[0],
     }
+
+    # Optional: live Alpaca keys — only present once user is ready to go live
+    live_secret_name = os.environ.get("ALPACA_LIVE_SECRET_NAME")
+    if live_secret_name:
+        try:
+            alpaca_live = _get_secret(client, live_secret_name)
+            secrets["alpaca_live_key"] = alpaca_live["ALPACA_KEY"]
+            secrets["alpaca_live_secret"] = alpaca_live["ALPACA_SECRET"]
+            logger.info("Live Alpaca keys loaded")
+        except Exception as e:
+            logger.warning(f"Could not load live Alpaca keys from {live_secret_name}: {e}")
+
     logger.info("All secrets loaded from Secrets Manager")
     return secrets

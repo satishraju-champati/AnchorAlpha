@@ -14,9 +14,11 @@ st.set_page_config(
 try:
     from AnchorAlpha.streamlit_app.momentum_dashboard import render as render_momentum
     from AnchorAlpha.streamlit_app.research_dashboard import render as render_research
+    from AnchorAlpha.streamlit_app.live_dashboard import render as render_live
 except ImportError:
     from momentum_dashboard import render as render_momentum
     from research_dashboard import render as render_research
+    from live_dashboard import render as render_live
 
 tab1, tab2, tab3 = st.tabs(["📈 Momentum", "🔬 Research", "🚀 Live"])
 
@@ -27,5 +29,4 @@ with tab2:
     render_research()
 
 with tab3:
-    st.markdown("### 🚀 Live Trading")
-    st.info("Live trading tab coming soon. Paper trading results from the Research tab will guide threshold selection before going live.")
+    render_live()

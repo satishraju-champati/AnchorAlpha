@@ -57,15 +57,18 @@ class OrderManager:
         """
         Returns (should_exit, reason).
         Checks all exit rules in priority order.
+        Uses per-position take-profit and stop-loss values.
         """
         pnl_pct = (current_price - position.entry_price) / position.entry_price
+        tp = getattr(position, "take_profit_pct", TAKE_PROFIT_PCT * 100) / 100
+        sl = getattr(position, "stop_loss_pct", STOP_LOSS_PCT * 100) / 100
 
         # 1. Stop-loss
-        if pnl_pct <= -STOP_LOSS_PCT:
+        if pnl_pct <= -sl:
             return True, "stop_loss"
 
         # 2. Take-profit
-        if pnl_pct >= TAKE_PROFIT_PCT:
+        if pnl_pct >= tp:
             return True, "take_profit"
 
         # 3. Score declined 3 consecutive days
