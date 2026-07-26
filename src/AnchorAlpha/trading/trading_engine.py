@@ -312,9 +312,9 @@ class TradingEngine:
         # Build full data (market cap + scoring signals)
         stock_data = build_stock_data(ticker, self.fmp_key)
 
-        # Market cap filter: $1T+ only
-        if stock_data.get("market_cap", 0) < 1_000_000_000_000:
-            logger.debug(f"Skipping {ticker} — market cap below $1T")
+        # Market cap filter: $500B+ for paper trading
+        if stock_data.get("market_cap", 0) < 500_000_000_000:
+            logger.debug(f"Skipping {ticker} — market cap below $500B (research)")
             return
 
         result = scorer.score_stock(ticker, stock_data)
@@ -458,9 +458,9 @@ class TradingEngine:
 
         stock_data = build_stock_data(ticker, self.fmp_key)
 
-        # Market cap filter: $1T+ only
-        if stock_data.get("market_cap", 0) < 1_000_000_000_000:
-            logger.debug(f"Skipping {ticker} (live) — market cap below $1T")
+        # Market cap filter: $800B+ for live trading
+        if stock_data.get("market_cap", 0) < 800_000_000_000:
+            logger.debug(f"Skipping {ticker} (live) — market cap below $800B")
             return
 
         result = scorer.score_stock(ticker, stock_data)
