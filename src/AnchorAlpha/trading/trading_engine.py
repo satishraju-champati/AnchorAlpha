@@ -309,8 +309,14 @@ class TradingEngine:
         if not dip or not dip.entry_ready:
             return
 
-        # Score check
+        # Build full data (market cap + scoring signals)
         stock_data = build_stock_data(ticker, self.fmp_key)
+
+        # Market cap filter: $1T+ only
+        if stock_data.get("market_cap", 0) < 1_000_000_000_000:
+            logger.debug(f"Skipping {ticker} — market cap below $1T")
+            return
+
         result = scorer.score_stock(ticker, stock_data)
         if not result or result.score < config.score_threshold:
             return
@@ -451,6 +457,12 @@ class TradingEngine:
             return
 
         stock_data = build_stock_data(ticker, self.fmp_key)
+
+        # Market cap filter: $1T+ only
+        if stock_data.get("market_cap", 0) < 1_000_000_000_000:
+            logger.debug(f"Skipping {ticker} (live) — market cap below $1T")
+            return
+
         result = scorer.score_stock(ticker, stock_data)
         if not result or result.score < profile.score_threshold:
             return
