@@ -1,24 +1,31 @@
 """
-Main Streamlit application entry point for AnchorAlpha Momentum Screener.
+AnchorAlpha — unified 3-tab Streamlit entry point.
 """
 
-import sys
-import os
-import logging
-from pathlib import Path
+import streamlit as st
 
-# Add the project root to Python path for imports
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+st.set_page_config(
+    page_title="AnchorAlpha",
+    page_icon="⚓",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# Import dashboard after path setup
-from AnchorAlpha.src.AnchorAlpha.streamlit_app.momentum_dashboard import main
+try:
+    from AnchorAlpha.streamlit_app.momentum_dashboard import render as render_momentum
+    from AnchorAlpha.streamlit_app.research_dashboard import render as render_research
+except ImportError:
+    from momentum_dashboard import render as render_momentum
+    from research_dashboard import render as render_research
 
-if __name__ == "__main__":
-    main()
+tab1, tab2, tab3 = st.tabs(["📈 Momentum", "🔬 Research", "🚀 Live"])
+
+with tab1:
+    render_momentum()
+
+with tab2:
+    render_research()
+
+with tab3:
+    st.markdown("### 🚀 Live Trading")
+    st.info("Live trading tab coming soon. Paper trading results from the Research tab will guide threshold selection before going live.")

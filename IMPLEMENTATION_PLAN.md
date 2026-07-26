@@ -1,6 +1,6 @@
 # AnchorAlpha Trading Bot — Implementation Plan
 
-Last updated: 2026-06-14
+Last updated: 2026-07-26
 
 ---
 
@@ -163,17 +163,17 @@ anchoralpha.com (Namecheap)
 
 ### Delivery Sequence (I handle all of this)
 
-| Week | What Gets Built |
-|---|---|
-| 1 | CloudFormation update (ECS, ECR, IAM, EventBridge), Dockerfile |
-| 2 | Core trading code: Claude scorer, Alpaca client, dip detector, config manager |
-| 3 | Research engine: paper trading loop, S3 trade logging, 8 default configs |
-| 4 | Streamlit: unified 3-tab dashboard, Research tab with config editor + analytics |
-| 5 | Live engine: real order execution, emergency stop, position conflict check |
-| 6 | Streamlit: Live tab with profiles, P&L, admin controls |
-| 7 | Integration testing on paper accounts, fix issues |
-| Month 2–3 | 60-day paper trading run (your job: monitor results) |
-| Month 4 | Analysis, threshold selection, go live (your decision) |
+| Week | What Gets Built | Status |
+|---|---|---|
+| 1 | CloudFormation update (ECS, ECR, IAM, EventBridge), Dockerfile | ✅ Done — 2026-07-26 |
+| 2 | Core trading code: Claude scorer, Alpaca client, dip detector, config manager | ✅ Done — 2026-07-26 |
+| 3 | Research engine: paper trading loop, S3 trade logging, 8 default configs | ✅ Done — 2026-07-26 |
+| 4 | Streamlit: unified 3-tab dashboard, Research tab with config editor + analytics | ✅ Done — 2026-07-26 |
+| 5 | Live engine: real order execution, emergency stop, position conflict check | ⏳ Next |
+| 6 | Streamlit: Live tab with profiles, P&L, admin controls | ⏳ Pending |
+| 7 | Integration testing on paper accounts, fix issues | ⏳ Pending |
+| Month 2–3 | 60-day paper trading run (your job: monitor results) | ⏳ Pending |
+| Month 4 | Analysis, threshold selection, go live (your decision) | ⏳ Pending |
 
 ### Monthly Cost
 
@@ -185,12 +185,12 @@ anchoralpha.com (Namecheap)
 | AWS Secrets Manager (4 new secrets) | ~$2 |
 | AWS ECR + EventBridge | ~$0.15 |
 | FMP API Starter (existing) | $29 |
-| Claude API (Haiku for research, Sonnet for live) | ~$43 |
+| Claude API (Haiku for research, Sonnet for live) | ~$25–43 |
 | Alpha Vantage | $0 |
 | Alpaca | $0 |
 | **Total** | **~$93/month** |
 
-During paper trading only (months 2–3): ~$75/month (no live trading, fewer Claude calls).
+During paper trading only (months 2–3): ~$79/month (no live Sonnet calls).
 
 ### New Code Structure
 

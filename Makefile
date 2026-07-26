@@ -1,6 +1,6 @@
 # AnchorAlpha Makefile
 
-.PHONY: help install test lint format clean build deploy deploy-infra push
+.PHONY: help install test lint format clean build deploy deploy-infra push deploy-dashboard
 
 AWS_ACCOUNT_ID := 013523127218
 AWS_REGION     := us-east-1
@@ -19,8 +19,9 @@ help:
 	@echo "  build         - Build Lambda deployment package"
 	@echo "  deploy        - Deploy Lambda code to AWS"
 	@echo "  deploy-infra  - Deploy/update CloudFormation stack (ECS, ECR, IAM, EventBridge)"
-	@echo "  push          - Build and push trading bot Docker image to ECR"
-	@echo "  dev           - Run Streamlit app locally"
+	@echo "  push              - Build and push trading bot Docker image to ECR"
+	@echo "  deploy-dashboard  - Build and deploy Streamlit dashboard to Lightsail"
+	@echo "  dev               - Run Streamlit app locally"
 
 # Install dependencies
 install:
@@ -76,8 +77,7 @@ deploy-infra:
 		--parameter-overrides \
 			Environment=prod \
 			NotificationEmail=satishraju.info@gmail.com \
-			FMPApiKey=UNCHANGED \
-			PerplexityApiKey=UNCHANGED \
+			ParameterKey=FMPApiKey,UsePreviousValue=true \
 		--no-fail-on-empty-changeset
 
 # Build and push trading bot Docker image to ECR
@@ -88,6 +88,10 @@ push:
 	docker tag anchoralpha-trading:latest $(ECR_REPO):latest
 	docker push $(ECR_REPO):latest
 	@echo "Pushed $(ECR_REPO):latest"
+
+# Build and deploy Streamlit dashboard to Lightsail
+deploy-dashboard:
+	bash scripts/deploy-dashboard.sh
 
 # Run Streamlit app locally
 dev:

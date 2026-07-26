@@ -13,11 +13,6 @@ Parameters:
     NoEcho: true
     Description: Financial Modeling Prep API Key
 
-  PerplexityApiKey:
-    Type: String
-    NoEcho: true
-    Description: Perplexity API Key (kept for backward compatibility)
-
   NotificationEmail:
     Type: String
     Description: Email address for budget and error notifications
@@ -94,7 +89,6 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource:
                   - !Ref FMPApiKeySecret
-                  - !Ref PerplexityApiKeySecret
         - PolicyName: SQSDeadLetterQueue
           PolicyDocument:
             Version: '2012-10-17'
@@ -117,13 +111,6 @@ Resources:
       Description: 'Financial Modeling Prep API Key for AnchorAlpha'
       SecretString: !Ref FMPApiKey
 
-  PerplexityApiKeySecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub 'anchor-alpha/perplexity-api-key-${Environment}'
-      Description: 'Perplexity API Key for AnchorAlpha'
-      SecretString: !Ref PerplexityApiKey
-
   MomentumProcessorFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -141,7 +128,6 @@ Resources:
           ENVIRONMENT: !Ref Environment
           S3_BUCKET: !Ref MomentumDataBucket
           FMP_API_KEY_SECRET: !Ref FMPApiKeySecret
-          PERPLEXITY_API_KEY_SECRET: !Ref PerplexityApiKeySecret
       DeadLetterConfig:
         TargetArn: !GetAtt ErrorNotificationQueue.Arn
 
@@ -484,12 +470,6 @@ Outputs:
     Value: !Ref FMPApiKeySecret
     Export:
       Name: !Sub '${AWS::StackName}-FMPSecret'
-
-  PerplexityApiKeySecretArn:
-    Description: 'ARN of the Perplexity API Key secret'
-    Value: !Ref PerplexityApiKeySecret
-    Export:
-      Name: !Sub '${AWS::StackName}-PerplexitySecret'
 
   EventBridgeRuleArn:
     Description: 'ARN of the EventBridge rule'

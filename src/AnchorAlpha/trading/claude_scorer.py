@@ -14,7 +14,7 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 SONNET = "claude-sonnet-4-6"
-HAIKU = "claude-haiku-4-5-20251001"
+HAIKU = "claude-haiku-4-5"
 
 SCORING_PROMPT = """You are a quantitative stock analyst scoring a large-cap stock for a swing trading strategy.
 

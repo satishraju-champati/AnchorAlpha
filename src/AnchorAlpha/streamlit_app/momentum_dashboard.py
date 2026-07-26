@@ -553,6 +553,13 @@ class MomentumDashboard:
         return filtered_stocks
 
 
+def render():
+    """Render momentum tab inside a parent multi-tab app (no set_page_config)."""
+    dashboard = MomentumDashboard()
+    apply_custom_theme()
+    dashboard._load_and_display_data()
+
+
 def main():
     """Main entry point for the dashboard application."""
     dashboard = MomentumDashboard()
