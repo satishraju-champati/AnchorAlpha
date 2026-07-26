@@ -32,6 +32,17 @@ if [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
     AWS_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key)
 fi
 
+# Read admin password from Secrets Manager (anchoralpha/dashboard → ADMIN_PASSWORD field)
+echo "==> Reading admin password from Secrets Manager..."
+ADMIN_PASSWORD=$(aws secretsmanager get-secret-value \
+    --region "$AWS_REGION" \
+    --secret-id "anchoralpha/dashboard" \
+    --query SecretString \
+    --output text 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ADMIN_PASSWORD',''))" 2>/dev/null || echo "")
+if [ -z "$ADMIN_PASSWORD" ]; then
+    echo "WARNING: Could not read ADMIN_PASSWORD from anchoralpha/dashboard — admin features will be disabled"
+fi
+
 echo "==> Creating deployment..."
 aws lightsail create-container-service-deployment \
     --region "$AWS_REGION" \
@@ -46,7 +57,8 @@ aws lightsail create-container-service-deployment \
                 \"AWS_ACCESS_KEY_ID\": \"$AWS_ACCESS_KEY_ID\",
                 \"AWS_SECRET_ACCESS_KEY\": \"$AWS_SECRET_ACCESS_KEY\",
                 \"ENVIRONMENT\": \"prod\",
-                \"S3_BUCKET\": \"$S3_BUCKET\"
+                \"S3_BUCKET\": \"$S3_BUCKET\",
+                \"ADMIN_PASSWORD\": \"$ADMIN_PASSWORD\"
             }
         }
     }" \

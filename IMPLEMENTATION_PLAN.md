@@ -169,9 +169,9 @@ anchoralpha.com (Namecheap)
 | 2 | Core trading code: Claude scorer, Alpaca client, dip detector, config manager | ✅ Done — 2026-07-26 |
 | 3 | Research engine: paper trading loop, S3 trade logging, 8 default configs | ✅ Done — 2026-07-26 |
 | 4 | Streamlit: unified 3-tab dashboard, Research tab with config editor + analytics | ✅ Done — 2026-07-26 |
-| 5 | Live engine: real order execution, emergency stop, position conflict check | ⏳ Next |
-| 6 | Streamlit: Live tab with profiles, P&L, admin controls | ⏳ Pending |
-| 7 | Integration testing on paper accounts, fix issues | ⏳ Pending |
+| 5 | Live engine: real order execution, emergency stop, position conflict check | ✅ Done — 2026-07-26 |
+| 6 | Streamlit: Live tab with profiles, P&L, admin controls | ✅ Done — 2026-07-26 |
+| 7 | Integration testing on paper accounts, fix issues | ⏳ Next |
 | Month 2–3 | 60-day paper trading run (your job: monitor results) | ⏳ Pending |
 | Month 4 | Analysis, threshold selection, go live (your decision) | ⏳ Pending |
 
