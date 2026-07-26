@@ -1,6 +1,6 @@
 # AnchorAlpha Trading Bot — Technical Details
 
-Last updated: 2026-07-05
+Last updated: 2026-07-26
 
 ---
 
@@ -159,9 +159,13 @@ src/AnchorAlpha/
 ├── lambda_function/
 │   └── handler.py                        ← existing nightly Lambda entry point
 │
-├── streamlit_app/                        ← existing dashboard (to be extended)
-│   ├── app.py
-│   ├── momentum_dashboard.py
+├── streamlit_app/                        ← 3-tab unified dashboard
+│   ├── app.py                            ← entry point: set_page_config + 3 tabs
+│   ├── momentum_dashboard.py             ← Tab 1: existing momentum screener
+│   ├── research_dashboard.py             ← Tab 2: paper trading configs, analytics
+│   ├── live_dashboard.py                 ← Tab 3: live profiles, P&L, admin controls
+│   ├── styling.py                        ← dark/black professional theme CSS
+│   ├── data_loader.py                    ← S3 data loading with cache
 │   └── ...
 │
 ├── momentum_engine.py                    ← existing momentum calculations
@@ -199,7 +203,7 @@ src/AnchorAlpha/
 ### Claude API (Anthropic)
 
 - **Models:**
-  - Research configs: `claude-haiku-4-5-20251001` (faster, cheaper)
+  - Research configs: `claude-haiku-4-5` (faster, cheaper)
   - Live profiles: `claude-sonnet-4-6` (higher quality)
 - **Max tokens:** 512 output
 - **Auth:** `anthropic.Anthropic(api_key=key)`
@@ -380,10 +384,11 @@ Response: CSV format — `symbol, name, reportDate, fiscalDateEnding, estimate, 
 ### Exit Rules (checked every 5 minutes, in priority order)
 
 ```
-1. Stop-loss:            P&L <= -10% from entry price        → exit immediately
-2. Take-profit:          P&L >= +20% from entry price        → exit immediately
+1. Stop-loss:            P&L <= -stop_loss_pct from entry    → exit immediately
+2. Take-profit:          P&L >= +take_profit_pct from entry  → exit immediately
+   (per-position values from config/profile, e.g. -10% / +20%)
 3. Score decline:        Claude score declined 3 consecutive days → exit
-4. Max hold:             Age >= 20 days AND score < threshold → exit
+4. Max hold:             Age >= max_hold_days AND score < threshold → exit
 5. Friday review:        Score < threshold OR P&L < 0 OR age >= 18 days → exit
    (3:30 PM ET Fri)      Score >= threshold AND P&L >= 0 AND age < 18 → hold weekend
 6. Earnings pre-close:   Earnings within 2 days              → exit
@@ -465,10 +470,13 @@ venv/bin/python tst/test_api_connections.py
 # Deploy CloudFormation (ECS, ECR, IAM, EventBridge)
 make deploy-infra
 
-# Build + push Docker image to ECR
+# Build + push trading engine Docker image to ECR
 make push
 
-# Deploy Lambda code update
+# Build + deploy Streamlit dashboard to Lightsail
+make deploy-dashboard
+
+# Deploy Lambda code update (nightly momentum pipeline)
 make deploy
 
 # Run dashboard locally
@@ -508,29 +516,39 @@ make dev
 | `infrastructure/cloudformation/anchor-alpha-infrastructure.yaml` | All AWS resources as code |
 | `Dockerfile` | Container image for trading engine |
 | `Makefile` | Build, deploy, push commands |
-| `src/AnchorAlpha/trading/trading_engine.py` | Main trading loop entry point |
-| `src/AnchorAlpha/trading/claude_scorer.py` | Claude API scoring model |
-| `src/AnchorAlpha/trading/alpaca_client.py` | Alpaca broker client |
-| `src/AnchorAlpha/trading/dip_detector.py` | Dip detection algorithm |
-| `src/AnchorAlpha/trading/config_manager.py` | S3 config management + default seeds |
-| `src/AnchorAlpha/trading/earnings_guard.py` | Earnings calendar protection |
-| `src/AnchorAlpha/trading/position_manager.py` | Position registry + conflict check |
-| `src/AnchorAlpha/trading/order_manager.py` | Exit rules + trade logging |
-| `src/AnchorAlpha/trading/secrets.py` | AWS Secrets Manager loader |
+| `src/AnchorAlpha/trading/trading_engine.py` | Main loop: research + live, market filter |
+| `src/AnchorAlpha/trading/claude_scorer.py` | Claude API scoring (Haiku/Sonnet) |
+| `src/AnchorAlpha/trading/alpaca_client.py` | Alpaca broker (orders, positions, quotes) |
+| `src/AnchorAlpha/trading/dip_detector.py` | 10-day high drawdown detection |
+| `src/AnchorAlpha/trading/config_manager.py` | S3 config management + 8 default seeds |
+| `src/AnchorAlpha/trading/earnings_guard.py` | Alpha Vantage earnings calendar |
+| `src/AnchorAlpha/trading/position_manager.py` | Position registry + global conflict check |
+| `src/AnchorAlpha/trading/order_manager.py` | Exit rules (per-position TP/SL) + trade log |
+| `src/AnchorAlpha/trading/secrets.py` | Secrets Manager loader (paper + optional live) |
+| `src/AnchorAlpha/streamlit_app/app.py` | 3-tab dashboard entry point |
+| `src/AnchorAlpha/streamlit_app/momentum_dashboard.py` | Tab 1: momentum screener |
+| `src/AnchorAlpha/streamlit_app/research_dashboard.py` | Tab 2: paper configs, trade log |
+| `src/AnchorAlpha/streamlit_app/live_dashboard.py` | Tab 3: live profiles, admin panel |
+| `src/AnchorAlpha/streamlit_app/styling.py` | Dark/black professional theme CSS |
+| `scripts/deploy-dashboard.sh` | Lightsail deploy (injects ADMIN_PASSWORD) |
 | `tst/test_api_connections.py` | API connection tests (15/15 passing) |
 
 ---
 
-## What Is NOT Built Yet (Pending)
+## Build Status
 
 | Item | Status |
 |---|---|
-| CloudFormation deployed to AWS | Pending — run `make deploy-infra` |
-| Docker image pushed to ECR | Pending — run `make push` |
-| Streamlit Research tab | Pending — Week 3 |
-| Streamlit Live tab | Pending — Week 5 |
-| Unified 3-tab dashboard | Pending — Week 4 |
-| Live Alpaca keys | Pending — Month 4 (after 60-day paper validation) |
+| CloudFormation (ECS, ECR, IAM, EventBridge) | ✅ Deployed — `anchor-alpha-infrastructure-prod` |
+| Trading engine Docker image in ECR | ✅ Pushed — `anchoralpha-trading:latest` |
+| Research loop (8 paper configs, Haiku scoring) | ✅ Done |
+| Live loop (market filter, conflict check, Sonnet scoring) | ✅ Done — activates when live Alpaca keys added |
+| Streamlit 3-tab dashboard | ✅ Live — Lightsail deployment 13 |
+| Research tab (configs, controls, trade log, Promote) | ✅ Done |
+| Live tab (profiles, P&L, admin login, capital bar) | ✅ Done |
+| Admin login (ADMIN_PASSWORD from Secrets Manager) | ✅ Done |
+| Integration testing on paper accounts | ⏳ Week 7 — start ECS task, monitor first paper trades |
+| Live Alpaca keys | ⏳ Month 4 — after 60-day paper validation |
 | 13F institutional signals | Deferred to v2 |
 | Short interest signals | Deferred to v2 |
 | Unusual Whales API | Deferred to v2 |
