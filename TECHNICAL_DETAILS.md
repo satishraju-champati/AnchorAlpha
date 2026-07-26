@@ -371,14 +371,17 @@ Response: CSV format — `symbol, name, reportDate, fiscalDateEnding, estimate, 
 
 ```
 1. Market filter:        SPY AND SOXX both above 200-day MA
-2. Score threshold:      Claude score >= config.score_threshold (e.g. 0.75)
-3. Dip detected:         Stock drawdown >= -10% from 10-day high
-4. Dip confirmed:
+2. Market cap filter:    Paper trading: market cap >= $500B
+                         Live trading:  market cap >= $800B
+                         (fetched live from FMP /profile each cycle)
+3. Score threshold:      Claude score >= config.score_threshold (e.g. 0.75)
+4. Dip detected:         Stock drawdown >= -10% from 10-day high
+5. Dip confirmed:
      Single-day:         Day+1 additional drop is 0% to -5% (deceleration)
      Multi-day:          Most recent day's drop decelerates vs average daily drop
-5. Earnings protection:  No earnings within 3 days
-6. Position limit:       Open positions < max_positions for this config/profile
-7. Conflict check:       (Live only) No other live profile holds this ticker
+6. Earnings protection:  No earnings within 3 days
+7. Position limit:       Open positions < max_positions for this config/profile
+8. Conflict check:       (Live only) No other live profile holds this ticker
 ```
 
 ### Exit Rules (checked every 5 minutes, in priority order)
