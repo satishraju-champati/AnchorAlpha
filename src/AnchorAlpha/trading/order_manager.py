@@ -128,6 +128,21 @@ class OrderManager:
             logger.error(f"Failed to load trades: {e}")
         return trades
 
+    def load_trades_for_date(self, target_date: str) -> list[TradeLog]:
+        """Load all research trades closed on a specific date across all configs."""
+        prefix = f"{RESEARCH_TRADES_PREFIX}"
+        trades = []
+        try:
+            resp = self.s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+            for obj in resp.get("Contents", []):
+                if f"/{target_date}/" in obj["Key"]:
+                    raw = self.s3.get_object(Bucket=S3_BUCKET, Key=obj["Key"])
+                    data = json.loads(raw["Body"].read())
+                    trades.append(TradeLog(**data))
+        except Exception as e:
+            logger.error(f"Failed to load trades for date {target_date}: {e}")
+        return trades
+
     def compute_analytics(self, trades: list[TradeLog]) -> dict:
         if not trades:
             return {"total_trades": 0}

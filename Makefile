@@ -80,11 +80,11 @@ deploy-infra:
 			ParameterKey=FMPApiKey,UsePreviousValue=true \
 		--no-fail-on-empty-changeset
 
-# Build and push trading bot Docker image to ECR
+# Build and push trading bot Docker image to ECR (linux/amd64 required for ECS Fargate)
 push:
 	aws ecr get-login-password --region $(AWS_REGION) | \
 		docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
-	docker build -t anchoralpha-trading .
+	docker build --platform linux/amd64 -t anchoralpha-trading .
 	docker tag anchoralpha-trading:latest $(ECR_REPO):latest
 	docker push $(ECR_REPO):latest
 	@echo "Pushed $(ECR_REPO):latest"

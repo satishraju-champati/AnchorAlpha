@@ -66,11 +66,30 @@ def should_shutdown() -> bool:
 
 
 FMP_BASE = "https://financialmodelingprep.com/stable"
+FMP_CALL_LIMIT = 290  # hard cap per loop cycle — stays under 300/min
+
+_fmp_call_count = 0
+
+
+def _fmp_reset_counter():
+    global _fmp_call_count
+    _fmp_call_count = 0
 
 
 def _fmp_get(path: str, fmp_key: str, params: dict = None) -> any:
     """FMP stable API — ticker passed as ?symbol= query param, not path param."""
+    global _fmp_call_count
+    if _fmp_call_count >= FMP_CALL_LIMIT:
+        logger.info(f"FMP call limit ({FMP_CALL_LIMIT}) reached — sleeping 61s then continuing")
+        time.sleep(61)
+        _fmp_call_count = 0
+    _fmp_call_count += 1
+    time.sleep(0.2)  # stay within FMP Starter 300 req/min
     r = requests.get(f"{FMP_BASE}/{path}", params={**(params or {}), "apikey": fmp_key}, timeout=10)
+    if r.status_code == 429:
+        logger.warning("FMP rate limit hit — sleeping 61s and retrying")
+        time.sleep(61)
+        r = requests.get(f"{FMP_BASE}/{path}", params={**(params or {}), "apikey": fmp_key}, timeout=10)
     r.raise_for_status()
     return r.json()
 
@@ -90,8 +109,12 @@ def build_stock_data(ticker: str, fmp_key: str) -> dict:
         profile = _fmp_get("profile", fmp_key, {"symbol": ticker})
         changes = _fmp_get("stock-price-change", fmp_key, {"symbol": ticker})
         news = _fmp_get("news/stock", fmp_key, {"tickers": ticker, "limit": 5})
-        ratings = _fmp_get("analyst-stock-ratings", fmp_key, {"symbol": ticker})
         income = _fmp_get("income-statement", fmp_key, {"symbol": ticker, "limit": 2})
+        # analyst-stock-ratings returns 404 for some tickers — treat as optional
+        try:
+            ratings = _fmp_get("analyst-stock-ratings", fmp_key, {"symbol": ticker})
+        except Exception:
+            ratings = []
 
         return {
             "ticker": ticker,
@@ -155,10 +178,22 @@ class TradingEngine:
         else:
             logger.info("No live Alpaca keys — live loop disabled until Month 4")
 
+        self._market_cache_result: bool = True
+        self._market_cache_time: float = 0.0
+        self._sns_topic_arn = os.environ.get(
+            "SNS_TOPIC_ARN",
+            "arn:aws:sns:us-east-1:013523127218:anchor-alpha-notifications-prod",
+        )
+        self._sns = boto3.client("sns", region_name="us-east-1")
+
         logger.info("TradingEngine initialised")
 
     def _check_market_conditions(self, settings) -> bool:
-        """Returns True (GREEN) if both SPY and SOXX are above their configured MAs."""
+        """Returns True (GREEN) if both SPY and SOXX are above their configured MAs.
+        Cached for 30 minutes to avoid redundant FMP calls every loop iteration.
+        """
+        if time.time() - self._market_cache_time < 1800:
+            return self._market_cache_result
         try:
             spy_days = settings.spy_ma_days
             soxx_days = settings.soxx_ma_days
@@ -180,10 +215,96 @@ class TradingEngine:
                 f"SOXX {soxx_prices[-1]:.2f} vs MA{soxx_days} {soxx_ma:.2f} "
                 f"({'OK' if soxx_ok else 'FAIL'})"
             )
-            return spy_ok and soxx_ok
+            result = spy_ok and soxx_ok
+            self._market_cache_result = result
+            self._market_cache_time = time.time()
+            return result
         except Exception as e:
             logger.error(f"Market condition check failed: {e} — treating as RED LIGHT")
             return False
+
+    def _send_daily_summary(self):
+        """Send end-of-day paper trading summary via SNS email."""
+        try:
+            today = date.today().isoformat()
+            configs = self.config_mgr.load_research_configs()
+
+            total_open = 0
+            opened_today = []
+            closed_today = []
+            open_details = []
+
+            for config in configs:
+                positions = self.position_mgr.load_research_positions(config.config_id)
+                total_open += len(positions)
+                for p in positions:
+                    if p.entry_date == today:
+                        opened_today.append(f"  + {p.ticker} ({config.name}) @ ${p.entry_price:.2f}  score={p.score_at_entry:.2f}")
+                    try:
+                        prices = get_price_history(p.ticker, self.fmp_key, days=2)
+                        current = prices[-1] if prices else p.entry_price
+                        pnl_pct = (current - p.entry_price) / p.entry_price * 100
+                        days_held = (date.today() - date.fromisoformat(p.entry_date)).days
+                        open_details.append(
+                            f"  {p.ticker} ({config.name})  entry=${p.entry_price:.2f}  now=${current:.2f}  "
+                            f"P&L={pnl_pct:+.1f}%  day {days_held}"
+                        )
+                    except Exception:
+                        open_details.append(f"  {p.ticker} ({config.name})  entry=${p.entry_price:.2f}")
+
+            # Closed trades today from trade log
+            try:
+                trades = self.order_mgr.load_trades_for_date(today)
+                for t in trades:
+                    if t.mode == "research":
+                        closed_today.append(
+                            f"  - {t.ticker} ({t.config_or_profile_id})  "
+                            f"P&L={t.pnl_pct*100:+.1f}% (${t.pnl_usd:+.0f})  reason={t.exit_reason}"
+                        )
+            except Exception:
+                pass
+
+            portfolio_value = self.alpaca_paper.get_portfolio_value()
+
+            lines = [
+                f"AnchorAlpha Paper Trading — Daily Summary",
+                f"Date: {today}",
+                f"{'='*50}",
+                f"",
+                f"Portfolio Value: ${portfolio_value:,.2f}",
+                f"Open Positions:  {total_open}",
+                f"",
+            ]
+
+            if opened_today:
+                lines += [f"Opened Today ({len(opened_today)}):"] + opened_today + [""]
+            else:
+                lines += ["Opened Today: none", ""]
+
+            if closed_today:
+                lines += [f"Closed Today ({len(closed_today)}):"] + closed_today + [""]
+            else:
+                lines += ["Closed Today: none", ""]
+
+            if open_details:
+                lines += [f"All Open Positions:"] + open_details + [""]
+            else:
+                lines += ["All Open Positions: none", ""]
+
+            lines += [
+                f"{'='*50}",
+                f"View dashboard: https://anchoralpha.com",
+            ]
+
+            message = "\n".join(lines)
+            self._sns.publish(
+                TopicArn=self._sns_topic_arn,
+                Subject=f"AnchorAlpha Paper Trading — {today}",
+                Message=message,
+            )
+            logger.info("Daily summary email sent")
+        except Exception as e:
+            logger.error(f"Failed to send daily summary: {e}")
 
     def run(self):
         logger.info("Trading engine started")
@@ -192,6 +313,7 @@ class TradingEngine:
         while True:
             if should_shutdown():
                 logger.info("Market closed — engine shutting down")
+                self._send_daily_summary()
                 break
 
             if not is_market_hours():
@@ -200,6 +322,7 @@ class TradingEngine:
                 continue
 
             try:
+                _fmp_reset_counter()
                 settings = self.config_mgr.load_global_settings()
                 if settings.emergency_stop:
                     logger.warning("EMERGENCY STOP active — skipping all trading")
@@ -228,6 +351,49 @@ class TradingEngine:
         configs = self.config_mgr.load_research_configs()
         scorer_cache: dict[str, ClaudeScorer] = {}
 
+        # ── Gather all tickers needed this cycle ─────────────────────────────
+        open_tickers: set[str] = set()
+        for config in configs:
+            for p in self.position_mgr.load_research_positions(config.config_id):
+                open_tickers.add(p.ticker)
+
+        all_needed = set(AI_SECTOR_STOCKS) | open_tickers
+
+        # ── Fetch price history ONCE per ticker (not once per config) ────────
+        price_cache: dict[str, list[float]] = {}
+        for ticker in all_needed:
+            try:
+                prices = get_price_history(ticker, self.fmp_key)
+                if prices:
+                    price_cache[ticker] = prices
+            except Exception as e:
+                logger.debug(f"Price fetch failed for {ticker}: {e}")
+
+        # ── Pre-detect dips for universe stocks ──────────────────────────────
+        dip_cache: dict[str, any] = {}
+        for ticker in AI_SECTOR_STOCKS:
+            if ticker in price_cache:
+                dip_cache[ticker] = detect_dip(ticker, price_cache[ticker])
+
+        # ── Fetch full stock data ONCE per candidate (shared across configs) ──
+        # Covers dip candidates (entry) + open positions (exit re-scoring)
+        stock_data_cache: dict[str, dict] = {}
+        data_tickers = open_tickers.copy()
+        if market_ok:
+            data_tickers |= {t for t, d in dip_cache.items() if d and d.entry_ready}
+        for ticker in data_tickers:
+            try:
+                stock_data_cache[ticker] = build_stock_data(ticker, self.fmp_key)
+            except Exception as e:
+                logger.debug(f"Stock data fetch failed for {ticker}: {e}")
+
+        logger.info(
+            f"Loop cache: {len(price_cache)} prices, "
+            f"{sum(1 for d in dip_cache.values() if d and d.entry_ready)} dips, "
+            f"{len(stock_data_cache)} stock data fetched"
+        )
+
+        # ── Evaluate each config using shared cached data ─────────────────────
         for config in configs:
             scorer_key = "haiku" if not config.use_sonnet else "sonnet"
             if scorer_key not in scorer_cache:
@@ -238,23 +404,28 @@ class TradingEngine:
             scorer = scorer_cache[scorer_key]
 
             try:
-                self._evaluate_research_config(config, scorer, friday_review, market_ok)
+                self._evaluate_research_config(
+                    config, scorer, friday_review, market_ok,
+                    price_cache, dip_cache, stock_data_cache,
+                )
             except Exception as e:
                 logger.error(f"Error in research config {config.config_id}: {e}", exc_info=True)
 
-    def _evaluate_research_config(self, config, scorer: ClaudeScorer, friday_review: bool, market_ok: bool = True):
+    def _evaluate_research_config(
+        self, config, scorer: ClaudeScorer, friday_review: bool, market_ok: bool,
+        price_cache: dict, dip_cache: dict, stock_data_cache: dict,
+    ):
         positions = self.position_mgr.load_research_positions(config.config_id)
 
-        # ── Exit check on open positions ───────────────────────────────────
+        # ── Exit check on open positions (use cached data) ─────────────────
         for position in list(positions):
             try:
-                prices = get_price_history(position.ticker, self.fmp_key)
+                prices = price_cache.get(position.ticker, [])
                 current_price = prices[-1] if prices else position.entry_price
-                stock_data = build_stock_data(position.ticker, self.fmp_key)
+                stock_data = stock_data_cache.get(position.ticker, {"ticker": position.ticker})
                 result = scorer.score_stock(position.ticker, stock_data)
                 current_score = result.score if result else position.score_at_entry
 
-                # Earnings pre-close
                 if config.earnings_protection and self.earnings_guard.should_pre_close(position.ticker):
                     self._close_research_position(config, position, current_price, current_score, "earnings_pre_close")
                     continue
@@ -269,7 +440,6 @@ class TradingEngine:
                 if should_exit:
                     self._close_research_position(config, position, current_price, current_score, reason)
                 else:
-                    # Update score streak
                     updated = self.order_mgr.update_score_streak(position, current_score, position.score_at_entry)
                     updated.score_at_entry = current_score
                     self.position_mgr.update_research_position(config.config_id, updated)
@@ -279,7 +449,7 @@ class TradingEngine:
 
         # ── Entry check for new positions ──────────────────────────────────
         if not market_ok:
-            return  # market filter active, no new entries
+            return
 
         positions = self.position_mgr.load_research_positions(config.config_id)
         open_tickers = {p.ticker for p in positions}
@@ -292,29 +462,30 @@ class TradingEngine:
             if len(positions) >= config.max_positions:
                 break
             try:
-                self._evaluate_entry_research(config, scorer, ticker, positions)
+                self._evaluate_entry_research(
+                    config, scorer, ticker, positions,
+                    price_cache, dip_cache, stock_data_cache,
+                )
             except Exception as e:
                 logger.error(f"Entry check failed for {ticker} config={config.config_id}: {e}")
 
-    def _evaluate_entry_research(self, config, scorer: ClaudeScorer, ticker: str, positions: list):
-        # Earnings block
+    def _evaluate_entry_research(
+        self, config, scorer: ClaudeScorer, ticker: str, positions: list,
+        price_cache: dict, dip_cache: dict, stock_data_cache: dict,
+    ):
         if config.earnings_protection and self.earnings_guard.blocks_entry(ticker):
             return
 
-        # Dip check
-        prices = get_price_history(ticker, self.fmp_key)
+        prices = price_cache.get(ticker)
         if not prices:
             return
-        dip = detect_dip(ticker, prices)
+        dip = dip_cache.get(ticker)
         if not dip or not dip.entry_ready:
             return
 
-        # Build full data (market cap + scoring signals)
-        stock_data = build_stock_data(ticker, self.fmp_key)
-
-        # Market cap filter: $500B+ for paper trading
-        if stock_data.get("market_cap", 0) < 500_000_000_000:
-            logger.debug(f"Skipping {ticker} — market cap below $500B (research)")
+        stock_data = stock_data_cache.get(ticker, {})
+        if stock_data.get("market_cap", 0) < 200_000_000_000:
+            logger.debug(f"Skipping {ticker} — market cap below $200B (research)")
             return
 
         result = scorer.score_stock(ticker, stock_data)

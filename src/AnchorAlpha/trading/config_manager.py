@@ -22,7 +22,7 @@ GLOBAL_SETTINGS_KEY = "live/global_settings.json"
 
 AI_SECTOR_STOCKS = [
     "NVDA", "AMD", "INTC", "AVGO", "QCOM", "MU", "AMAT", "LRCX", "KLAC", "MRVL",
-    "MSFT", "GOOGL", "AMZN", "META", "AAPL",
+    "MSFT", "GOOGL", "AMZN", "META", "AAPL", "TSLA",
     "TSM", "ASML", "ARM",
     "ORCL", "CRM", "SNOW", "PLTR", "DDOG", "NET", "ZS",
     "ANET", "CSCO",
