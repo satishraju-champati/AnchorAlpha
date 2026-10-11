@@ -1,123 +1,185 @@
-# AnchorAlpha - Multi-Tier Large-Cap Momentum Screener
+# AnchorAlpha - AI-Powered Swing Trading Platform
 
-A serverless momentum screening application that identifies top-performing large-cap US stocks across different market capitalization tiers with AI-powered insights.
+An algorithmic swing trading platform that combines momentum screening with AI-scored dip detection across large-cap AI sector stocks. Runs a paper trading research engine to validate strategies before going live.
 
 ## 🚀 Quick Start
 
-### One-Command Setup and Deployment
-
-```bash
-# Run the setup wizard
-./scripts/setup.sh
-
-# Or deploy directly (if you have API keys ready)
-export NOTIFICATION_EMAIL="your-email@example.com"
-export FMP_API_KEY="your_fmp_api_key"
-export PERPLEXITY_API_KEY="your_perplexity_api_key"
-./scripts/deploy-all.sh --environment prod
-```
-
 ### Prerequisites
 
-- AWS Account with CLI configured
+- AWS Account with CLI configured (`aws configure`)
 - Docker installed
 - Python 3.11+
-- [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) API key
-- [Perplexity](https://www.perplexity.ai/settings/api) API key
+- [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) API key (Starter plan)
+- [Anthropic](https://console.anthropic.com) API key
+- [Alpaca](https://alpaca.markets) paper trading account
+
+### Deploy
+
+```bash
+make deploy-infra      # CloudFormation: ECS, ECR, IAM, EventBridge
+make push              # Build & push trading engine Docker image to ECR
+make deploy-dashboard  # Deploy Streamlit dashboard to Lightsail
+```
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   EventBridge   │───▶│  Lambda Function │───▶│   S3 Bucket     │
-│  (Daily Cron)   │    │  (Data Processor)│    │ (JSON Storage)  │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                │                        │
-                                ▼                        ▼
-                       ┌──────────────────┐    ┌─────────────────┐
-                       │  External APIs   │    │ Streamlit App   │
-                       │ (FMP, Perplexity)│    │ (Lightsail)     │
-                       └──────────────────┘    └─────────────────┘
+  anchoralpha.com  (Namecheap → Lightsail SSL)
+        │
+        ▼
+  ┌─────────────────────────────────────────────┐
+  │         Lightsail — Streamlit Dashboard      │
+  │  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
+  │  │Momentum  │  │Research  │  │   Live    │  │
+  │  │   Tab    │  │  Tab     │  │   Tab     │  │
+  │  └──────────┘  └──────────┘  └───────────┘  │
+  └─────────────────────────────────────────────┘
+        │ reads                        │ reads
+        ▼                              ▼
+  ┌───────────┐                 ┌────────────────┐
+  │  S3 Bucket│                 │  S3 Bucket     │
+  │momentum-  │                 │research/       │
+  │data/      │                 │  configs/      │
+  └───────────┘                 │  positions/    │
+        ▲                       │  trades/       │
+        │ writes                └────────────────┘
+        │                              ▲ writes
+  ┌─────────────────┐          ┌───────────────────────────────────┐
+  │   EventBridge   │          │  EventBridge (Mon–Fri 8:30 AM ET) │
+  │ (Mon–Fri 4:30PM)│          └───────────────────────────────────┘
+  └─────────────────┘                         │ starts
+        │ triggers                            ▼
+        ▼                       ┌─────────────────────────┐
+  ┌──────────────────┐          │   ECS Fargate Task      │
+  │  Lambda Function │          │  ┌───────────────────┐  │
+  │  (Momentum       │          │  │  Research Loop    │  │
+  │   Pipeline)      │          │  │  8 paper configs  │  │
+  └──────────────────┘          │  └───────────────────┘  │
+        │ calls                 │  ┌───────────────────┐  │
+        ▼                       │  │  Live Loop        │  │
+  ┌──────────────────┐          │  │  (Month 4+)       │  │
+  │  FMP API         │          │  └───────────────────┘  │
+  │  (stock data)    │          └─────────────────────────┘
+  └──────────────────┘                    │ calls
+                                          ▼
+                            ┌─────────────────────────────┐
+                            │       External APIs          │
+                            │  FMP API  — price/news/data  │
+                            │  Claude   — AI stock scoring │
+                            │  Alpaca   — paper orders     │
+                            │  AlphaVantage — earnings     │
+                            └─────────────────────────────┘
+                                          │
+                            ┌─────────────────────────────┐
+                            │  SNS → Email                 │
+                            │  Daily trading summary       │
+                            │  sent at market close        │
+                            └─────────────────────────────┘
 ```
 
-**Serverless AWS Architecture:**
-- **AWS Lambda**: Daily momentum calculations and AI summary generation
-- **Amazon S3**: Stores processed stock data as JSON files
-- **EventBridge**: Triggers Lambda function daily at market close
-- **AWS Lightsail**: Hosts the Streamlit frontend (~$3.50/month)
-- **AWS Secrets Manager**: Securely stores API keys
-- **CloudWatch**: Monitoring, logging, and alerting
-- **Total Cost**: ~$5-10/month with budget controls
+### How It Works
+
+**Momentum Pipeline** (existing, runs daily):
+- EventBridge fires Mon–Fri at 4:30 PM ET → Lambda fetches FMP data → ranks stocks by momentum across 4 market-cap tiers → stores to S3 → Momentum tab reads it
+
+**Trading Engine** (new, runs during market hours):
+- EventBridge fires Mon–Fri at 8:30 AM ET → starts ECS Fargate task
+- Every 5 minutes during market hours (9:30 AM – 4:30 PM ET):
+  - Fetches price history for 38 AI-sector stocks (once, cached across all configs)
+  - Detects dips ≥ 10% from 10-day high
+  - For dip candidates above $200B market cap → scores with Claude AI (Haiku for research)
+  - Score ≥ threshold → places bracket order on Alpaca paper account
+  - At market close → sends daily summary email via SNS → task exits
+
+**Dashboard** (always on):
+- Research tab — view paper trading configs, open positions, trade history
+- Live tab — admin-gated, manage real-money profiles (Month 4+)
+
+### AWS Components
+
+| Component | Purpose | Cost/mo |
+|---|---|---|
+| Lightsail (nano) | Streamlit dashboard at anchoralpha.com | $7 |
+| ECS Fargate | Trading engine (market hours only) | ~$9 |
+| Lambda | Nightly momentum pipeline | ~$1 |
+| S3 | All data storage | ~$1 |
+| Secrets Manager | API keys (FMP, Claude, Alpaca, etc.) | ~$2 |
+| ECR + EventBridge | Container registry + scheduling | ~$0.15 |
+| SNS | Daily email summary | ~$0 |
+| **Total** | | **~$20/mo** |
+
+### Universe
+
+38 large-cap AI sector stocks across semiconductors, cloud, SaaS, networking, and infrastructure:
+
+`NVDA AMD INTC AVGO QCOM MU AMAT LRCX KLAC MRVL MSFT GOOGL AMZN META AAPL TSLA TSM ASML ARM ORCL CRM SNOW PLTR DDOG NET ZS ANET CSCO SMCI DELL HPE AI SOUN BBAI PANW CRWD`
+
+**Entry criteria:** dip ≥ 10% from 10-day high + market cap ≥ $200B (paper) / $800B (live) + Claude score ≥ threshold + SPY & SOXX above 200-day MA
+
+**Exit criteria:** +20% take-profit, -10% stop-loss, 20-day max hold, or Friday re-score below threshold
 
 ## 📋 Project Structure
 
 ```
 AnchorAlpha/
-├── src/AnchorAlpha/           # Main application code
-│   ├── models.py              # Core data models
-│   ├── momentum_engine.py     # Momentum calculation engine
-│   ├── api/                   # API clients (FMP, Perplexity)
-│   ├── lambda_function/       # AWS Lambda handler
-│   ├── streamlit_app/         # Streamlit web interface
-│   ├── storage/               # S3 data pipeline
-│   └── utils/                 # Logging and monitoring
-├── infrastructure/            # AWS deployment templates
-│   ├── cloudformation/        # CloudFormation templates
-│   ├── docker/               # Container configuration
-│   └── scripts/              # Deployment scripts
-├── config/                   # Configuration templates
-├── scripts/                  # Deployment and utility scripts
-├── tst/AnchorAlpha/          # Comprehensive test suite
-└── requirements.txt          # Python dependencies
+├── src/AnchorAlpha/
+│   ├── trading/                   # Trading engine (ECS Fargate)
+│   │   ├── trading_engine.py      # Main loop — research + live
+│   │   ├── claude_scorer.py       # Claude AI stock scoring
+│   │   ├── alpaca_client.py       # Broker: orders, positions
+│   │   ├── dip_detector.py        # 10-day high drawdown detection
+│   │   ├── order_manager.py       # TP/SL logic, trade logging
+│   │   ├── position_manager.py    # Open position registry
+│   │   ├── earnings_guard.py      # Earnings calendar blocks
+│   │   ├── config_manager.py      # S3 config read/write
+│   │   └── secrets.py             # Secrets Manager loader
+│   ├── streamlit_app/             # Dashboard (Lightsail)
+│   │   ├── app.py                 # 3-tab entry point
+│   │   ├── momentum_dashboard.py  # Momentum tab
+│   │   ├── research_dashboard.py  # Research (paper trading) tab
+│   │   └── live_dashboard.py      # Live tab (admin-gated)
+│   ├── lambda_function/           # Nightly momentum pipeline
+│   ├── api/                       # FMP client
+│   └── models.py                  # Core data models
+├── infrastructure/cloudformation/ # All AWS resources as code
+├── scripts/
+│   └── deploy-dashboard.sh        # Lightsail deployment
+├── Dockerfile                     # Trading engine image
+├── Dockerfile.streamlit           # Dashboard image
+├── Makefile                       # push / deploy-dashboard / deploy-infra
+└── requirements.txt
 ```
 
 ## 🚀 Deployment
 
-### Option 1: Complete Deployment (Recommended)
-
 ```bash
-./scripts/deploy-all.sh --environment prod
-```
+# 1. Deploy / update AWS infrastructure
+make deploy-infra
 
-### Option 2: Step-by-Step Deployment
+# 2. Build & push trading engine to ECR (linux/amd64 required for ECS)
+make push
 
-```bash
-# 1. Deploy AWS infrastructure
-make deploy-infra ENV=prod \
-  NOTIFICATION_EMAIL="your-email@example.com" \
-  FMP_API_KEY="your_fmp_key" \
-  PERPLEXITY_API_KEY="your_perplexity_key"
+# 3. Deploy Streamlit dashboard to Lightsail
+make deploy-dashboard
 
-# 2. Deploy Lambda function
-./scripts/deploy-lambda.sh --environment prod
-
-# 3. Deploy Streamlit container
-make deploy-container ENV=prod
-```
-
-### Option 3: Using Makefile
-
-```bash
-make deploy-all ENV=prod \
-  NOTIFICATION_EMAIL="your-email@example.com" \
-  FMP_API_KEY="your_fmp_key" \
-  PERPLEXITY_API_KEY="your_perplexity_key"
+# 4. Run dashboard locally
+make dev
 ```
 
 ## 📊 Monitoring
 
 ```bash
-# Check deployment status
-make status ENV=prod
+# View trading engine logs (CloudWatch)
+aws logs tail /ecs/anchoralpha-trading --follow --region us-east-1
 
-# View Lambda logs
-make logs ENV=prod
+# View Lambda momentum pipeline logs
+aws logs tail /aws/lambda/anchor-alpha-momentum-processor-prod --follow --region us-east-1
 
-# Test Lambda function
-make test-lambda ENV=prod
+# Check running ECS tasks
+aws ecs list-tasks --cluster anchoralpha --region us-east-1
 
-# Monitor costs
-aws budgets describe-budgets --account-id $(aws sts get-caller-identity --query Account --output text)
+# Enable / disable trading schedule
+aws scheduler update-schedule --name anchoralpha-start-trading-prod --state ENABLED  # or DISABLED
 ```
 
 ## 🔧 Development
@@ -167,22 +229,29 @@ streamlit run src/AnchorAlpha/streamlit_app/demo_interactive_dashboard.py
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### Secrets Manager Keys
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `FMP_API_KEY` | Financial Modeling Prep API key | Yes | - |
-| `PERPLEXITY_API_KEY` | Perplexity API key | Yes | - |
-| `NOTIFICATION_EMAIL` | Email for alerts | Yes | - |
-| `AWS_REGION` | AWS region | No | us-east-1 |
-| `ENVIRONMENT` | Deployment environment | No | prod |
+| Secret Name | Keys | Used By |
+|---|---|---|
+| `anchor-alpha/fmp-api-key-prod` | (plain string) | Lambda + Trading engine |
+| `anchoralpha/claude` | `CLAUDE_API_KEY` | Trading engine |
+| `anchoralpha/alpaca-paper` | `ALPACA_KEY`, `ALPACA_SECRET` | Trading engine |
+| `anchoralpha/alpaca-live` | `ALPACA_KEY`, `ALPACA_SECRET` | Trading engine (Month 4+) |
+| `anchoralpha/alphavantage` | `ALPHAVANTAGE_API_KEY` | Trading engine |
+| `anchoralpha/dashboard` | `ADMIN_PASSWORD` | Streamlit Live tab |
 
-### Market Configuration
+### Trading Parameters (per research config)
 
-- **Market Cap Tiers**: $100B-$200B, $200B-$500B, $500B-$1T, $1T+
-- **Momentum Windows**: 7, 30, 60, 90 days
-- **Top Performers**: 20 stocks per tier/timeframe
-- **Minimum Market Cap**: $10B (large-cap only)
+| Parameter | Default | Description |
+|---|---|---|
+| Score threshold | 0.60 – 0.75 | Claude AI score to enter |
+| Dip threshold | 10% | Drawdown from 10-day high |
+| Take profit | +20% | Auto-exit gain |
+| Stop loss | -10% | Auto-exit loss |
+| Max hold | 20 days | Maximum position age |
+| Max positions | 5 | Per config simultaneously |
+| Market cap (paper) | ≥ $200B | Entry filter |
+| Market cap (live) | ≥ $800B | Entry filter |
 
 ## 🔒 Security
 
