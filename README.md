@@ -110,9 +110,9 @@ make deploy-dashboard  # Deploy Streamlit dashboard to Lightsail
 
 ### Universe
 
-38 large-cap AI sector stocks across semiconductors, cloud, SaaS, networking, and infrastructure:
+39 large-cap AI sector stocks across semiconductors, cloud, SaaS, networking, and infrastructure:
 
-`NVDA AMD INTC AVGO QCOM MU AMAT LRCX KLAC MRVL MSFT GOOGL AMZN META AAPL TSLA TSM ASML ARM ORCL CRM SNOW PLTR DDOG NET ZS ANET CSCO SMCI DELL HPE AI SOUN BBAI PANW CRWD`
+`NVDA AMD INTC AVGO QCOM MU AMAT LRCX KLAC MRVL MSFT GOOGL AMZN META AAPL TSLA TSM ASML ARM ORCL CRM SNOW PLTR DDOG NET ZS ANET CSCO SMCI DELL HPE CRWV AI SOUN BBAI PANW CRWD`
 
 **Entry criteria:** dip ≥ 10% from 10-day high + market cap ≥ $200B (paper) / $800B (live) + Claude score ≥ threshold + SPY & SOXX above 200-day MA
 

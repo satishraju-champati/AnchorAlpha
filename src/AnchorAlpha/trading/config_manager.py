@@ -26,7 +26,7 @@ AI_SECTOR_STOCKS = [
     "TSM", "ASML", "ARM",
     "ORCL", "CRM", "SNOW", "PLTR", "DDOG", "NET", "ZS",
     "ANET", "CSCO",
-    "SMCI", "DELL", "HPE",
+    "SMCI", "DELL", "HPE", "CRWV",
     "AI", "SOUN", "BBAI",
     "PANW", "CRWD",
 ]
