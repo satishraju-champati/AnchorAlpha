@@ -496,7 +496,10 @@ class TradingEngine:
         current_price = prices[-1]
         portfolio_value = self.alpaca_paper.get_portfolio_value()
         capital = portfolio_value * (config.capital_pct / 100) / config.max_positions
-        qty = capital / current_price
+        qty = int(capital / current_price)  # whole shares only — Alpaca bracket orders reject fractional qty
+        if qty < 1:
+            logger.info(f"Skipping {ticker} — capital ${capital:.0f} not enough for 1 share at ${current_price:.2f}")
+            return
 
         order = self.alpaca_paper.place_bracket_order(
             ticker=ticker,
@@ -644,7 +647,10 @@ class TradingEngine:
 
         current_price = prices[-1]
         capital_per_slot = profile.capital_usd / profile.max_positions
-        qty = capital_per_slot / current_price
+        qty = int(capital_per_slot / current_price)  # whole shares only — Alpaca bracket orders reject fractional qty
+        if qty < 1:
+            logger.info(f"Skipping {ticker} (live) — capital ${capital_per_slot:.0f} not enough for 1 share at ${current_price:.2f}")
+            return
 
         order = self.alpaca_live.place_bracket_order(
             ticker=ticker,

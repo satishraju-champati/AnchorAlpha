@@ -81,7 +81,7 @@ class ClaudeScorer:
             )
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=512,
+                max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = message.content[0].text.strip()
