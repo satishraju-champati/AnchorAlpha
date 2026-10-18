@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 DIP_THRESHOLD = -0.10        # -10% drawdown from 10-day high triggers watch
 SINGLE_DAY_MAX_CONT = -0.05  # single-day dip: day+1 additional drop must be 0% to -5%
 MIN_HISTORY_DAYS = 10
+LARGE_DIP_BYPASS = -0.15     # drawdown worse than -15% + 3+ days → enter without deceleration
+LARGE_DIP_MIN_DAYS = 3
 
 
 @dataclass
@@ -64,14 +66,20 @@ def detect_dip(ticker: str, prices: list[float]) -> Optional[DipSignal]:
         if days_in_dip < 2:
             return None  # not enough data for multi-day confirmation
 
-        # Confirmation: most recent day's drop has decelerated vs average daily drop
-        avg_daily_drop = drawdown / days_in_dip
-        entry_ready = single_day_drop > avg_daily_drop  # deceleration = less negative
+        # Large-dip bypass: deep, prolonged dips enter without waiting for deceleration
+        if drawdown <= LARGE_DIP_BYPASS and days_in_dip >= LARGE_DIP_MIN_DAYS:
+            entry_ready = True
+        else:
+            # Confirmation: most recent day's drop has decelerated vs average daily drop
+            avg_daily_drop = drawdown / days_in_dip
+            entry_ready = single_day_drop > avg_daily_drop  # deceleration = less negative
 
     dip_type = "single_day" if is_single_day else "multi_day"
+    bypass = not is_single_day and drawdown <= LARGE_DIP_BYPASS and days_in_dip >= LARGE_DIP_MIN_DAYS
     logger.info(
         f"{ticker}: {dip_type} dip detected "
-        f"drawdown={drawdown:.1%} entry_ready={entry_ready}"
+        f"drawdown={drawdown:.1%} days={days_in_dip} entry_ready={entry_ready}"
+        + (" [large-dip bypass]" if bypass else "")
     )
     return DipSignal(
         ticker=ticker,
