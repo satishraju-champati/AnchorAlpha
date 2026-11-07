@@ -489,7 +489,9 @@ class TradingEngine:
             return
 
         result = scorer.score_stock(ticker, stock_data)
-        if not result or result.score < config.score_threshold:
+        score_ceiling = getattr(config, "score_ceiling", 0.65)
+        if not result or not (config.score_threshold <= result.score <= score_ceiling):
+            logger.debug(f"Skipping {ticker} — score {result.score if result else 'N/A'} outside band [{config.score_threshold:.2f}, {score_ceiling:.2f}]")
             return
 
         # Place paper order

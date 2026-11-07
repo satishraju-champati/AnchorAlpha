@@ -17,9 +17,10 @@ S3_BUCKET = os.environ.get("S3_BUCKET", "anchor-alpha-momentum-data-prod-0135231
 RESEARCH_TRADES_PREFIX = "research/trades/"
 LIVE_TRADES_PREFIX = "live/trades/"
 
-TAKE_PROFIT_PCT = 0.20   # +20%
+TAKE_PROFIT_PCT = 0.15   # +15%
 STOP_LOSS_PCT = 0.10     # -10%
 MAX_SCORE_DECLINE_DAYS = 3  # close if score drops 3 consecutive days
+FRIDAY_LOSS_THRESHOLD = -0.03  # Friday review: only close if down more than -3%
 
 
 @dataclass
@@ -79,13 +80,11 @@ class OrderManager:
         if position.is_max_hold_reached and current_score < score_threshold:
             return True, "max_hold"
 
-        # 5. Friday review — close if score below threshold OR at a loss
+        # 5. Friday review — only cut losers; let profitable and near-breakeven positions run
         if is_friday_review:
-            if current_score < score_threshold:
+            if pnl_pct < FRIDAY_LOSS_THRESHOLD:  # down more than -3% → cut
                 return True, "friday_review"
-            if pnl_pct < 0:
-                return True, "friday_review"
-            if position.age_days >= 18:
+            if position.age_days >= 18:  # always close at max age regardless of P&L
                 return True, "friday_review"
 
         return False, ""

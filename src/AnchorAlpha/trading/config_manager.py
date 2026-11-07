@@ -38,10 +38,11 @@ class ResearchConfig:
     name: str
     active: bool = True
     sectors: list = field(default_factory=lambda: ["AI/Semiconductors"])
-    score_threshold: float = 0.75
+    score_threshold: float = 0.40   # lower bound — data shows beaten-down stocks (<0.65) recover better
+    score_ceiling: float = 0.65     # upper bound — high scores enter on already-recovered stocks
     max_positions: int = 5
     capital_pct: float = 30.0
-    take_profit_pct: float = 20.0
+    take_profit_pct: float = 15.0
     stop_loss_pct: float = 10.0
     max_hold_days: int = 20
     earnings_protection: bool = True
@@ -58,7 +59,7 @@ class LiveProfile:
     capital_usd: float = 50000.0
     score_threshold: float = 0.75
     max_positions: int = 5
-    take_profit_pct: float = 20.0
+    take_profit_pct: float = 15.0
     stop_loss_pct: float = 10.0
     max_hold_days: int = 20
     earnings_protection: bool = True
@@ -162,14 +163,14 @@ class ConfigManager:
         if existing:
             return
         defaults = [
-            ResearchConfig("config_1", "AI Semis — Low (0.60)", score_threshold=0.60, sectors=["AI/Semiconductors"]),
-            ResearchConfig("config_2", "AI Semis — Standard (0.75)", score_threshold=0.75, sectors=["AI/Semiconductors"]),
-            ResearchConfig("config_3", "Cloud SaaS — Low (0.60)", score_threshold=0.60, sectors=["Cloud/SaaS"]),
-            ResearchConfig("config_4", "Cloud SaaS — Standard (0.75)", score_threshold=0.75, sectors=["Cloud/SaaS"]),
-            ResearchConfig("config_5", "Fintech — Standard (0.75)", score_threshold=0.75, sectors=["Fintech"]),
-            ResearchConfig("config_6", "Healthcare — Standard (0.75)", score_threshold=0.75, sectors=["Healthcare/Biotech"]),
-            ResearchConfig("config_7", "Energy — Standard (0.75)", score_threshold=0.75, sectors=["Energy"]),
-            ResearchConfig("config_8", "Broad Large-cap — Mid (0.65)", score_threshold=0.65, sectors=["All"]),
+            ResearchConfig("config_1", "AI Semis — Band (0.40–0.65)", score_threshold=0.40, score_ceiling=0.65, sectors=["AI/Semiconductors"]),
+            ResearchConfig("config_2", "AI Semis — Band (0.45–0.65)", score_threshold=0.45, score_ceiling=0.65, sectors=["AI/Semiconductors"]),
+            ResearchConfig("config_3", "Cloud SaaS — Band (0.40–0.65)", score_threshold=0.40, score_ceiling=0.65, sectors=["Cloud/SaaS"]),
+            ResearchConfig("config_4", "Cloud SaaS — Band (0.45–0.65)", score_threshold=0.45, score_ceiling=0.65, sectors=["Cloud/SaaS"]),
+            ResearchConfig("config_5", "Broad — Band (0.40–0.65)", score_threshold=0.40, score_ceiling=0.65, sectors=["All"]),
+            ResearchConfig("config_6", "Broad — Band (0.45–0.65)", score_threshold=0.45, score_ceiling=0.65, sectors=["All"]),
+            ResearchConfig("config_7", "Broad — Band (0.50–0.65)", score_threshold=0.50, score_ceiling=0.65, sectors=["All"]),
+            ResearchConfig("config_8", "Broad — Band (0.40–0.60)", score_threshold=0.40, score_ceiling=0.60, sectors=["All"]),
         ]
         for config in defaults:
             self.save_research_config(config)
