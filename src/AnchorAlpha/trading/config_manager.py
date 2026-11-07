@@ -71,7 +71,6 @@ class GlobalSettings:
     emergency_stop: bool = False
     market_filter_active: bool = True
     spy_ma_days: int = 200
-    soxx_ma_days: int = 200
 
 
 class ConfigManager:

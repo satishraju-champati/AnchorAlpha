@@ -189,36 +189,31 @@ class TradingEngine:
         logger.info("TradingEngine initialised")
 
     def _check_market_conditions(self, settings) -> bool:
-        """Returns True (GREEN) if both SPY and SOXX are above their configured MAs.
+        """Returns True (GREEN) if SPY is above its 200-day MA.
+        SOXX removed — it tracks the same stocks in our universe so it's always
+        red during sector corrections, blocking entries at exactly the wrong time.
         Cached for 30 minutes to avoid redundant FMP calls every loop iteration.
         """
         if time.time() - self._market_cache_time < 1800:
             return self._market_cache_result
         try:
             spy_days = settings.spy_ma_days
-            soxx_days = settings.soxx_ma_days
             spy_prices = get_price_history("SPY", self.fmp_key, days=spy_days + 5)
-            soxx_prices = get_price_history("SOXX", self.fmp_key, days=soxx_days + 5)
 
-            if len(spy_prices) < spy_days or len(soxx_prices) < soxx_days:
-                logger.warning("Insufficient price history for MA check — treating as RED LIGHT")
+            if len(spy_prices) < spy_days:
+                logger.warning("Insufficient SPY price history for MA check — treating as RED LIGHT")
                 return False
 
             spy_ma = sum(spy_prices[-spy_days:]) / spy_days
-            soxx_ma = sum(soxx_prices[-soxx_days:]) / soxx_days
             spy_ok = spy_prices[-1] > spy_ma
-            soxx_ok = soxx_prices[-1] > soxx_ma
 
             logger.info(
                 f"Market filter: SPY {spy_prices[-1]:.2f} vs MA{spy_days} {spy_ma:.2f} "
-                f"({'OK' if spy_ok else 'FAIL'}) | "
-                f"SOXX {soxx_prices[-1]:.2f} vs MA{soxx_days} {soxx_ma:.2f} "
-                f"({'OK' if soxx_ok else 'FAIL'})"
+                f"({'OK' if spy_ok else 'FAIL'})"
             )
-            result = spy_ok and soxx_ok
-            self._market_cache_result = result
+            self._market_cache_result = spy_ok
             self._market_cache_time = time.time()
-            return result
+            return spy_ok
         except Exception as e:
             logger.error(f"Market condition check failed: {e} — treating as RED LIGHT")
             return False
